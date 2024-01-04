@@ -1,8 +1,6 @@
-# python-pkg
+# Submanifold Time Surface Convolutions for Event Streams - keras implementation
 
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-
-TODO: Update title, add basic description.
 
 ## Pre-commit
 
