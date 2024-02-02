@@ -68,14 +68,16 @@ class Conv(_ConvBase):
     def __init__(
         self,
         filters: int,
+        normalize: bool = True,
         **kwargs,
     ):
         self.filters = filters
+        self.normalize = normalize
         super().__init__(**kwargs)
 
     def get_config(self):
         config = super().get_config()
-        config.update(filters=self.filters)
+        config.update(filters=self.filters, normalize=self.normalize)
         return config
 
     def build(
@@ -114,6 +116,7 @@ class Conv(_ConvBase):
             kernel=kernel,
             segment_ids=segment_ids,
             predecessor_ids=predecessor_ids,
+            normalize=self.normalize,
         )
 
     def call(
@@ -139,6 +142,15 @@ class Conv(_ConvBase):
 
 @register_stsc_serializable
 class DepthwiseConv(_ConvBase):
+    def __init__(self, normalize: bool = True, **kwargs):
+        self.normalize = normalize
+        super().__init__(**kwargs)
+
+    def get_config(self):
+        config = super().get_config()
+        config["normalize"] = self.normalize
+        return config
+
     def build(
         self,
         features_shape,
@@ -175,6 +187,7 @@ class DepthwiseConv(_ConvBase):
             kernel=kernel,
             segment_ids=segment_ids,
             predecessor_ids=predecessor_ids,
+            normalize=self.normalize,
         )
 
     def call(
@@ -329,10 +342,12 @@ class ExclusiveConv(_ConvBase):
         self,
         filters: int,
         kernel_size: int,
+        normalize: bool = True,
         **kwargs,
     ):
         self.filters = filters
         self.kernel_size = kernel_size
+        self.normalize = normalize
         super().__init__(**kwargs)
 
     def get_config(self):
@@ -340,6 +355,7 @@ class ExclusiveConv(_ConvBase):
         config.update(
             filters=self.filters,
             kernel_size=self.kernel_size,
+            normalize=self.normalize,
         )
         return config
 
@@ -380,6 +396,7 @@ class ExclusiveConv(_ConvBase):
             successor_kernel_ids=successor_kernel_ids,
             segment_ids_out=segment_ids_out,
             indices_are_sorted=indices_are_sorted,
+            normalize=self.normalize,
         )
 
     def call(
@@ -407,15 +424,25 @@ class ExclusiveConv(_ConvBase):
 
 @register_stsc_serializable
 class ExclusiveDepthwiseConv(_ConvBase):
-    def __init__(self, kernel_size: int, *, indices_are_sorted: bool = False, **kwargs):
+    def __init__(
+        self,
+        kernel_size: int,
+        *,
+        indices_are_sorted: bool = False,
+        normalize: bool = True,
+        **kwargs,
+    ):
         self.kernel_size = kernel_size
         self.indices_are_sorted = indices_are_sorted
+        self.normalize = normalize
         super().__init__(**kwargs)
 
     def get_config(self):
         config = super().get_config()
         config.update(
-            kernel_size=self.kernel_size, indices_are_sorted=self.indices_are_sorted
+            kernel_size=self.kernel_size,
+            indices_are_sorted=self.indices_are_sorted,
+            normalize=self.normalize,
         )
         return config
 
@@ -456,6 +483,7 @@ class ExclusiveDepthwiseConv(_ConvBase):
             successor_kernel_ids=successor_kernel_ids,
             segment_ids_out=segment_ids_out,
             indices_are_sorted=indices_are_sorted,
+            normalize=self.normalize,
         )
 
     def call(

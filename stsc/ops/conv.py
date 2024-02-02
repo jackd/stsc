@@ -16,6 +16,7 @@ def conv(
     kernel: BackendTensor,
     segment_ids: BackendTensor,
     predecessor_ids: BackendTensor,
+    normalize: bool = True,
 ) -> BackendTensor:
     """
     Args:
@@ -32,7 +33,13 @@ def conv(
     """
     K, C_in, C_out = kernel.shape
     x = patch_ops.get_patches(
-        features, times_in, times_out, decay_rate, segment_ids, predecessor_ids
+        features,
+        times_in,
+        times_out,
+        decay_rate,
+        segment_ids,
+        predecessor_ids,
+        normalize=normalize,
     )
     return ops.matmul(
         ops.reshape(x, (-1, K * C_in)), ops.reshape(kernel, (K * C_in, C_out))
@@ -47,6 +54,7 @@ def depthwise_conv(
     kernel: BackendTensor,
     segment_ids: BackendTensor,
     predecessor_ids: BackendTensor,
+    normalize: bool = True,
 ) -> BackendTensor:
     """
     Args:
@@ -62,7 +70,13 @@ def depthwise_conv(
         [E_out, C] output features
     """
     x = patch_ops.get_patches(
-        features, times_in, times_out, decay_rate, segment_ids, predecessor_ids
+        features,
+        times_in,
+        times_out,
+        decay_rate,
+        segment_ids,
+        predecessor_ids,
+        normalize=normalize,
     )
     return ops.sum(x * kernel, axis=1)
 
@@ -135,6 +149,7 @@ def exclusive_conv(
     successor_kernel_ids: BackendTensor,
     segment_ids_out: BackendTensor,
     indices_are_sorted: bool = False,
+    normalize: bool = True,
 ) -> BackendTensor:
     """
     Args:
@@ -160,6 +175,7 @@ def exclusive_conv(
         segment_ids_out=segment_ids_out,
         indices_are_sorted=indices_are_sorted,
         kernel_size=K,
+        normalize=normalize,
     )
     return ops.matmul(
         ops.reshape(x, (-1, K * C_in)), ops.reshape(kernel, (K * C_in, C_out))
@@ -175,6 +191,7 @@ def exclusive_depthwise_conv(
     successor_kernel_ids: BackendTensor,
     segment_ids_out: BackendTensor,
     indices_are_sorted: bool = False,
+    normalize: bool = True,
 ) -> BackendTensor:
     """
     Args:
@@ -200,6 +217,7 @@ def exclusive_depthwise_conv(
         segment_ids_out=segment_ids_out,
         indices_are_sorted=indices_are_sorted,
         kernel_size=K,
+        normalize=normalize,
     )
     return ops.sum(x * kernel, axis=1)
 

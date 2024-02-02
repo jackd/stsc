@@ -1,4 +1,7 @@
-# __all__ = ["counting_argsort"]
+from jax_stsc_ops.counting_argsort import counting_argsort
+
+__all__ = ["counting_argsort"]
+
 
 # import jax.numpy as jnp
 # from jax.core import ShapedArray

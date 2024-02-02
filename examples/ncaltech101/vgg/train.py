@@ -8,12 +8,13 @@ import keras
 import numpy as np
 import tensorflow as tf
 import tree
-from events_tfds.events.cifar10_dvs import GRID_SHAPE, NUM_CLASSES
+from events_tfds.events.ncaltech101 import GRID_SHAPE, NUM_CLASSES
 from jk_neuro.data.transforms_tf import (
     FlipHorizontal,
     FlipTime,
     Maybe,
     Pad,
+    PadToSquare,
     RandomCrop,
     RandomRotate,
     RandomTemporalCropV2,
@@ -23,6 +24,7 @@ from jk_neuro.data.transforms_tf import (
     StreamData,
     TemporalCropV2,
     Transform,
+    Transpose,
     mask_valid_events,
 )
 
@@ -33,39 +35,40 @@ from stsc.models.backbones import vgg
 
 # keras.config.disable_traceback_filtering()  # DEBUG
 
-# time_scale = 1e5
-time_scale = 1.3e6 / 16
+# time_scale = 1e4
+time_scale = 3e5 / 16
 grid_shape = GRID_SHAPE
 num_classes = NUM_CLASSES
 # batch_size = 1024
+# batch_size = 256
 # batch_size = 128
-# batch_size = 64
-batch_size = 32
+# batch_size = 64  # default
+batch_size = 32  # HACK
 # batch_size = 16
 # batch_size = 8
 # batch_size = 2
-events_per_example = 262_144  # 2**18, 1_844_489_935 total in first 90% of examples
-# events_per_example = 32_768  # 64 * 64 * 8
+events_per_example = 131_072  # mean 115_297
 # epochs = 20
 # epochs = 50
 # epochs = 100
 epochs = 200
-examples_per_epoch = 9_000
+examples_per_epoch = 7_838  # 8_709 * 0.9
 train_split = "train[:90%]"
 val_split = "train[90%:]"
 resized_grid_shape = (128, 128)
 padding = 10
 # filters0 = 128  # max w/ batch_size=32 before OOM
-filters0 = 64  # optimal?
-# filters0 = 32  # default
+filters0 = 64  # default
+# filters0 = 32
 # filters0 = 16
 # filters0 = 4
 base_lr = 1e-3
 optimizer = "AdamW"
-weight_decay = 5e-4
 # base_lr = 2e-2
 # base_lr = 1e-2
 # optimizer = "SGD"
+# weight_decay = 0
+weight_decay = 5e-4
 # weight_decay = 5e-3
 # weight_decay = 2e-3
 # weight_decay = 1e-3
@@ -82,31 +85,35 @@ complex_conv = False
 # dropout_rate = 0.25
 dropout_rate = 0.5
 
-# min_dt = 1.2 * 1e6 / time_scale / 16
-# min_dt = 0.0
-min_dt = 1.0
+# min_dt = 3 * 1e5 / time_scale / 16
+# min_dt = 1.0  # HACK
+min_dt = 0.0
 max_events = batch_size * events_per_example - 1  # -1 so padding makes power of 2
 
 backend = keras.backend.backend()
 
-
-base_transform = Resize(resized_grid_shape)
-
 train_transform = SeriesTransform(
-    Pad(padding),
+    Transpose(),
+    PadToSquare(),
     RandomRotate(np.pi / 12),
     RandomZoom(0.9, 1.1),
+    Resize(resized_grid_shape),
+    Pad(padding),
     RandomCrop(resized_grid_shape),
     RandomTemporalCropV2(0.2),
     Maybe(FlipHorizontal()),
     Maybe(FlipTime()),
 )
 
-val_transform = TemporalCropV2(0.1, 0.8)
-# val_transform = None
+val_transform = SeriesTransform(
+    Transpose(),
+    PadToSquare(),
+    Resize(resized_grid_shape),
+    TemporalCropV2(0.1, 0.8),
+)
 
 steps_per_epoch = examples_per_epoch // batch_size
-warmup_epochs = 0
+warmup_epochs = 1
 
 
 def map_fun(example, transform: tp.Optional[Transform]):
@@ -123,7 +130,6 @@ def map_fun(example, transform: tp.Optional[Transform]):
 
     times = tf.cast(times, tf.float32) / time_scale
     stream = StreamData(coords, times, polarity, GRID_SHAPE)
-    stream, label = base_transform.transform_stream_example(stream, label)
     if transform is not None:
         stream, label = transform.transform_stream_example(stream, label)
         stream = mask_valid_events(stream)
@@ -138,7 +144,7 @@ def map_fun(example, transform: tp.Optional[Transform]):
 
 
 train_ds = tfds_base_dataset(
-    "cifar10_dvs",
+    "ncaltech101",
     train_split,
     map_fun=functools.partial(map_fun, transform=train_transform),
     shuffle=True,
@@ -147,7 +153,7 @@ train_ds = tfds_base_dataset(
     num_parallel_calls=4,
 )
 val_ds = tfds_base_dataset(
-    "cifar10_dvs",
+    "ncaltech101",
     val_split,
     map_fun=functools.partial(map_fun, transform=val_transform),
     num_parallel_calls=4,
@@ -162,6 +168,8 @@ if pool:
         simple_pooling=simple_pooling,
         reduction=reduction,
         complex_conv=complex_conv,
+        initial_stride=4,
+        initial_sample_rate=8,
     )
 else:
     backbone_func = functools.partial(
@@ -170,6 +178,8 @@ else:
         filters0=filters0,
         min_dt=min_dt,
         complex_conv=complex_conv,
+        initial_stride=4,
+        initial_sample_rate=8,  # default would be 4**2==16
     )
 
 
@@ -194,7 +204,7 @@ else:
     optimizer = keras.optimizers.AdamW(lr, weight_decay=weight_decay)
 
 optimizer.exclude_from_weight_decay(
-    var_names=["bias", "gamma", "beta", "scale", "decay_rate"]
+    var_names=["bias", "gamma", "beta", "scale", "tau", "decay_rate"]
     # var_names=["bias", "gamma", "beta", "scale"]
 )
 
@@ -210,30 +220,10 @@ preprocessor, model = wrappers.per_event_model(
     weighted_metrics=weighted_metrics,
     optimizer=optimizer,
     dropout_rate=dropout_rate,
-    # normalize=False,
     jit_compile=jit,
     stream_filter=lambda streams: streams[1:],
     **kwargs,
 )
-
-# preprocessor, model = wrappers.pool_all_model(
-#     **kwargs,
-# )
-# model.compile(
-#     optimizer=optimizer,
-#     weighted_metrics=weighted_metrics,
-#     loss=loss,
-# )
-# preprocessor, model = wrappers.per_event_model(
-#     per_event_loss=loss,
-#     dropout_rate=0.25,
-#     **kwargs,
-# )
-# # No loss in compile since it's already been implemented in per_event_model
-# model.compile(
-#     optimizer=optimizer,
-#     weighted_metrics=weighted_metrics,
-# )
 
 model.summary()
 
@@ -298,13 +288,6 @@ else:
             (sample_weight_broadcast, sample_weight),
         )
 
-    # preprocessor = tf.function(preprocessor, jit_compile=True)
-    # base_preprocessor = preprocessor
-
-    # def preprocessor(inputs, labels, sample_weight):
-    #     with tf.xla.experimental.jit_scope():
-    #         return base_preprocessor(inputs, labels, sample_weight)
-
 
 def preprocess_dataset(dataset: tf.data.Dataset):
     dataset = batch_and_pad(
@@ -314,9 +297,7 @@ def preprocess_dataset(dataset: tf.data.Dataset):
         drop_remainder=True,
         map_fun=preprocessor_fun,
         num_parallel_calls=tf.data.AUTOTUNE,
-        # deterministic=False,
     )
-    # dataset = dataset.prefetch(1)
     return dataset
 
 

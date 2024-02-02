@@ -945,27 +945,27 @@ class SimpleExclusivePooling(OpNode):
             lengths = ops.slice(lengths, (0,), (num_segments,))
             lengths = ops.maximum(lengths, ops.ones_like(lengths))
             features = features / ops.expand_dims(ops.cast(lengths, features.dtype), -1)
-        elif self.reduction == "max":
-            # hacky work-around to get accurate gradients
-            gathered_features = ops.take(
-                ops.pad(features, [[0, 1], [0, 0]]), self._successor_ids
-            )
-            mask = input_features == gathered_features
-            mask_count = segment_ops.segment_sum(
-                ops.cast(mask, input_features.dtype),
-                self._successor_ids,
-                num_segments=num_segments + 1,
-            )
-            mask_count = ops.take(mask_count, self._successor_ids)
-            factor = ops.where(
-                ops.greater(mask_count, 0), 1 / mask_count, ops.zeros_like(mask_count)
-            )
-            features = segment_ops.segment_sum(
-                input_features * ops.expand_dims(factor, -1),
-                self._successor_ids,
-                num_segments=num_segments,
-                indices_are_sorted=self._indices_are_sorted,
-            )
+        # elif self.reduction == "max":
+        #     # hacky work-around to get accurate gradients
+        #     gathered_features = ops.take(
+        #         ops.pad(features, [[0, 1], [0, 0]]), self._successor_ids, axis=0
+        #     )
+        #     mask = ops.equal(input_features, gathered_features)
+        #     mask_count = segment_ops.segment_sum(
+        #         ops.cast(mask, input_features.dtype),
+        #         self._successor_ids,
+        #         num_segments=num_segments + 1,
+        #     )
+        #     mask_count = ops.take(mask_count, self._successor_ids)
+        #     factor = ops.where(
+        #         ops.greater(mask_count, 0), 1 / mask_count, ops.zeros_like(mask_count)
+        #     )
+        #     features = segment_ops.segment_sum(
+        #         input_features * ops.expand_dims(factor, -1),
+        #         self._successor_ids,
+        #         num_segments=num_segments,
+        #         indices_are_sorted=self._indices_are_sorted,
+        #     )
         return features
 
 
@@ -975,7 +975,6 @@ class ExclusivePatchExtractor(OpNode):
         node: StreamNode,
         stream_out: StreamData,
         num_channels: int | None = None,
-        **layer_kwargs,
     ):
         self._built = False
         stream_in = node.stream
@@ -995,7 +994,6 @@ class ExclusivePatchExtractor(OpNode):
             order=stream_out.get_contiguous_segments_order(),
         )
         super().__init__(node, node_out)
-        self._layer_kwargs = layer_kwargs
         self._layer = self._create_layer()
 
     @property
@@ -1127,7 +1125,6 @@ class ExclusiveConv(ExclusivePatchExtractor):
             return conv_layers.ExclusiveDepthwiseConv(
                 self.kernel_size, **self._layer_kwargs
             )
-
         return conv_layers.ExclusiveConv(
             self._filters, self.kernel_size, **self._layer_kwargs
         )

@@ -34,7 +34,7 @@ time_scale = 1e5
 grid_shape = GRID_SHAPE
 num_classes = NUM_CLASSES
 # batch_size = 1024
-# batch_size = 128  # largest possible before oom with perm hack
+# batch_size = 128
 # batch_size = 64
 batch_size = 32
 # batch_size = 16
@@ -318,26 +318,9 @@ val_ds.save(tmp_dir)
 val_ds = tf.data.Dataset.load(tmp_dir)
 print("Finished caching val_ds")
 
-# HACK
-# train_ds = tf.data.Dataset.from_tensors(train_ds.take(1).get_single_element()).repeat()
-# val_ds = tf.data.Dataset.from_tensors(val_ds.take(1).get_single_element()).repeat(
-#     len(val_ds)
-# )
-
 model.fit(
     train_ds,
     epochs=epochs,
     steps_per_epoch=steps_per_epoch,
-    # steps_per_epoch=1,  # HACK
-    # epochs=1,  # HACK
-    # validation_freq=steps_per_epoch,  # HACK
-    # verbose=False,
     validation_data=val_ds,
-    callbacks=[
-        # keras.callbacks.TerminateOnNaN(),
-        # LogPrinter(),
-    ],
 )
-
-# for v in model.weights:
-#     print(v.path, keras.ops.all(keras.ops.isfinite(v.value)))

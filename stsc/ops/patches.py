@@ -9,6 +9,10 @@ Tensor = BackendTensor | KerasTensor
 
 
 class GetPatches(Operation):
+    def __init__(self, normalize: bool = True, name=None):
+        self.normalize = normalize
+        super().__init__(name=name)
+
     def compute_output_spec(
         self,
         features: KerasTensor,
@@ -39,6 +43,7 @@ class GetPatches(Operation):
             decay_rate=decay_rate,
             segment_ids=segment_ids,
             predecessor_ids=predecessor_ids,
+            normalize=self.normalize,
         )
 
 
@@ -49,8 +54,9 @@ def get_patches(
     decay_rate: Tensor | tp.Tuple[Tensor, Tensor],
     segment_ids: Tensor,
     predecessor_ids: Tensor,
+    normalize: bool = True,
 ) -> Tensor:
-    return GetPatches()(
+    return GetPatches(normalize=normalize)(
         features=features,
         times_in=times_in,
         times_out=times_out,
@@ -111,9 +117,16 @@ def get_one_hot_patches(
 
 
 class GetExclusivePatches(Operation):
-    def __init__(self, kernel_size: int, indices_are_sorted: int, name=None):
+    def __init__(
+        self,
+        kernel_size: int,
+        indices_are_sorted: int,
+        normalize: bool = True,
+        name=None,
+    ):
         self.kernel_size = kernel_size
         self.indices_are_sorted = indices_are_sorted
+        self.normalize = normalize
         super().__init__(name=name)
 
     def compute_output_spec(
@@ -148,6 +161,7 @@ class GetExclusivePatches(Operation):
             segment_ids_out=segment_ids_out,
             kernel_size=self.kernel_size,
             indices_are_sorted=self.indices_are_sorted,
+            normalize=self.normalize,
         )
 
 
@@ -160,9 +174,12 @@ def get_exclusive_patches(
     segment_ids_out: Tensor,
     kernel_size: int,
     indices_are_sorted: bool = False,
+    normalize: bool = True,
 ) -> Tensor:
     return GetExclusivePatches(
-        kernel_size=kernel_size, indices_are_sorted=indices_are_sorted
+        kernel_size=kernel_size,
+        indices_are_sorted=indices_are_sorted,
+        normalize=normalize,
     )(
         features=features,
         dt=dt,

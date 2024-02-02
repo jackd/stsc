@@ -8,6 +8,13 @@ from ... import components
 # from jk_utils.layers.masked_batch_norm import MaskedBatchNormalization
 
 
+class _default:
+    pass
+
+
+DEFAULT = _default()
+
+
 def complex_decay_rate_activation(x):
     real, imag = keras.ops.split(x, 2, axis=-1)
     real = keras.ops.tanh(real)
@@ -17,17 +24,6 @@ def complex_decay_rate_activation(x):
         real < 0, imag + keras.ops.convert_to_tensor(np.pi, x.dtype), imag
     )
     return rate_real, rate_imag
-
-
-def real_decay_rate_activation(x):
-    x = keras.ops.tanh(x)
-    x = keras.ops.abs(x)
-    return -keras.ops.log(x)
-
-
-def real_decay_rate_activation_v2(x, epsilon=1e-2):
-    x = keras.ops.abs(keras.ops.convert_to_tensor(x)) + epsilon
-    return 1 / x
 
 
 def conv_block(
@@ -43,9 +39,15 @@ def conv_block(
     **kwargs,
 ) -> components.StreamNode:
     if normalize:
-        x = x.masked_batch_norm(momentum=0.9)
+        x = x.masked_batch_norm()
 
-    activation_name = activation.__name__ if callable(activation) else activation
+    activation_name = (
+        "None"
+        if activation is None
+        else activation.__name__
+        if callable(activation)
+        else activation
+    )
     bias_initializer = (
         keras.initializers.Constant(-1.0) if "heaviside" in activation_name else "zeros"
     )
@@ -59,12 +61,7 @@ def conv_block(
             decay_rate_initializer=keras.initializers.RandomNormal(stddev=1.0),
         )
     else:
-        kwargs.update(
-            # decay_rate_activation="softplus",
-            # decay_rate_initializer="zeros",
-            decay_rate_activation=real_decay_rate_activation_v2,
-            decay_rate_initializer=keras.initializers.RandomNormal(stddev=1.0),
-        )
+        kwargs.update(decay_rate_activation=keras.ops.softplus)
     if stride is not None:
         assert stride == kernel_size, (stride, kernel_size)
         if sample_rate is None:
@@ -90,34 +87,41 @@ def vgg_cnn_backbone(
     activation="relu",
     min_dt: float = 0.0,
     complex_conv: bool = False,
+    initial_stride: int = 4,
+    initial_sample_rate: int | None = None,
+    initial_activation=DEFAULT,
 ) -> tp.Sequence[components.StreamNode]:
-    """conv_next classifier."""
-    assert node.stream.grid_shape == (128, 128), node.stream.grid_shape
+    """fully convolutional vgg classifier."""
 
-    kwargs = {"activation": activation, "complex_conv": complex_conv}
-
+    conv_kwargs = {"activation": activation, "complex_conv": complex_conv}
+    strided_kwargs = dict(conv_kwargs)
+    strided_kwargs.update(kernel_size=2, stride=2, min_dt=min_dt)
     streams = []
     x = node
 
     x = conv_block(
-        x, filters0 * 1, 4, 4, min_dt=min_dt, normalize=False, **kwargs
+        x,
+        # filters0,
+        filters0 * 2,  # HACK
+        initial_stride,
+        initial_stride,
+        min_dt=min_dt,
+        normalize=False,
+        sample_rate=initial_sample_rate,
+        activation=activation if initial_activation is DEFAULT else initial_activation,
+        complex_conv=complex_conv,
     )  # (32, 32)
+
     streams.append(x)
-    x = conv_block(x, filters0 * 2, **kwargs)
+    x = conv_block(x, filters0 * 4, **strided_kwargs)  # (16, 16)
+    x = conv_block(x, filters0 * 4, **conv_kwargs)
     streams.append(x)
-    x = conv_block(x, filters0 * 4, 2, 2, min_dt=min_dt, **kwargs)  # (16, 16)
+    x = conv_block(x, filters0 * 8, **strided_kwargs)  # (8, 8)
+    x = conv_block(x, filters0 * 8, **conv_kwargs)
+    streams.append(x)
+    x = conv_block(x, filters0 * 8, **strided_kwargs)  # (4, 4)
     for _ in range(2):
-        x = conv_block(x, filters0 * 4, **kwargs)
-    streams.append(x)
-    x = conv_block(x, filters0 * 8, 2, 2, min_dt=min_dt, **kwargs)  # (8, 8)
-    for _ in range(2):
-        x = conv_block(x, filters0 * 8, **kwargs)
-    streams.append(x)
-    x = conv_block(x, filters0 * 8, 2, 2, min_dt=min_dt, **kwargs)  # (4, 4)
-    for _ in range(2):
-        x = conv_block(x, filters0 * 8, **kwargs)
-    streams.append(x)
-    x = conv_block(x, filters0 * 8, 2, 2, min_dt=min_dt, **kwargs)  # (2, 2)
+        x = conv_block(x, filters0 * 8, **conv_kwargs)
     streams.append(x)
     return streams
 
@@ -131,41 +135,41 @@ def vgg_pool_backbone(
     simple_pooling: bool = False,
     reduction="mean",
     complex_conv: bool = False,
-    blocks_per_level: int = 2,
-    num_levels: int = 4,
+    initial_sample_rate: int | None = None,
+    initial_stride: int = 4,
+    initial_activation=DEFAULT,
 ) -> tp.Sequence[components.StreamNode]:
-    """conv_next classifier."""
-    assert node.stream.grid_shape == (128, 128), node.stream.grid_shape
-
-    kwargs = {"activation": activation, "complex_conv": complex_conv}
+    """vgg classifier with pooling."""
+    conv_kwargs = {"activation": activation, "complex_conv": complex_conv}
     pool_kwargs = {"simple": simple_pooling, "reduction": reduction, "min_dt": min_dt}
     streams = []
     x = node
 
     x = conv_block(
-        x, filters0, 4, 4, min_dt=min_dt, normalize=False, **kwargs
+        x,
+        # filters0,
+        filters0 * 2,  # HACK
+        initial_stride,
+        initial_stride,
+        min_dt=min_dt,
+        normalize=False,
+        sample_rate=initial_sample_rate,
+        activation=activation if initial_activation is DEFAULT else initial_activation,
+        complex_conv=complex_conv,
     )  # (32, 32)
-    # for _ in range(num_levels - 1):
-    #     for _ in range(blocks_per_level):
-    #         x = conv_block(x, filters, **kwargs)
-    #     streams.append(x)
-    #     x = x.exclusive_pool(2, **pool_kwargs)
-    #     filters *= 2
-    # for _ in range(blocks_per_level):
-    #     x = conv_block(x, filters, **kwargs)
 
-    x = conv_block(x, filters0 * 2, **kwargs)
+    x = conv_block(x, filters0 * 2, **conv_kwargs)
     streams.append(x)
     x = x.exclusive_pool(2, **pool_kwargs)  # (16, 16)
     for _ in range(2):
-        x = conv_block(x, filters0 * 4, **kwargs)
+        x = conv_block(x, filters0 * 4, **conv_kwargs)
     streams.append(x)
     x = x.exclusive_pool(2, **pool_kwargs)  # (8, 8)
     for _ in range(2):
-        x = conv_block(x, filters0 * 8, **kwargs)
+        x = conv_block(x, filters0 * 8, **conv_kwargs)
     streams.append(x)
     x = x.exclusive_pool(2, **pool_kwargs)  # (4, 4)
     for _ in range(2):
-        x = conv_block(x, filters0 * 8, **kwargs)
+        x = conv_block(x, filters0 * 8, **conv_kwargs)
     streams.append(x)
     return streams

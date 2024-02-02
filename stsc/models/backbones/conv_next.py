@@ -5,11 +5,6 @@ import keras
 from ... import components
 
 
-def real_decay_rate_activation_v2(x, epsilon=1e-2):
-    x = keras.ops.abs(keras.ops.convert_to_tensor(x)) + epsilon
-    return 1 / x
-
-
 def conv_next_block(
     x: components.StreamNode,
     dropout_rate: float = 0.0,
@@ -23,16 +18,14 @@ def conv_next_block(
     z = z.stationary_conv(
         filters=filters,
         kernel_shape=kernel_shape,
-        decay_rate_activation=real_decay_rate_activation_v2,
-        decay_rate_initializer=keras.initializers.RandomNormal(stddev=1.0),
+        decay_rate_activation=keras.ops.softplus,
         activation=activation,
     )
     # z = z.map_features(LayerScale(scale_initializer=1e-1))
     # z = z.stationary_conv(
     #     filters=None,
     #     kernel_shape=kernel_shape,
-    #     decay_rate_activation=real_decay_rate_activation_v2,
-    #     decay_rate_initializer=keras.initializers.RandomNormal(stddev=1.0),
+    #     decay_rate_activation=keras.ops.softplus,
     # )
     # z = z.map_features(keras.layers.LayerNormalization())
     # z = z.map_features(keras.layers.Dense(filters * 4, activation=activation))
@@ -56,8 +49,7 @@ def stem(
         strides,
         sample_rate=sample_rate,
         min_dt=min_dt,
-        decay_rate_activation=real_decay_rate_activation_v2,
-        decay_rate_initializer=keras.initializers.RandomNormal(stddev=1.0),
+        decay_rate_activation=keras.ops.softplus,
     )
     return x.map_features(keras.layers.LayerNormalization())
 
@@ -72,8 +64,7 @@ def downsample(
         x.num_channels * 2,
         strides,
         min_dt=min_dt,
-        decay_rate_activation=real_decay_rate_activation_v2,
-        decay_rate_initializer=keras.initializers.RandomNormal(stddev=1.0),
+        decay_rate_activation=keras.ops.softplus,
     )
     return x
 

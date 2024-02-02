@@ -87,7 +87,9 @@ class ComponentsTest(testing.TestCase, parameterized.TestCase):
             ops.convert_to_tensor(batch_splits, "int32"),
             (grid_size,),
         )
-        stream_out = stream_in.stationary_conv(filters_out, kernel_size)
+        stream_out = stream_in.stationary_conv(
+            filters_out, kernel_size, normalize=False
+        )
         stream_out.force_chronological()
 
         op = stream_out.source
@@ -163,7 +165,9 @@ class ComponentsTest(testing.TestCase, parameterized.TestCase):
             ops.convert_to_tensor(batch_splits, "int32"),
             grid_shape,
         )
-        stream_out = stream_in.stationary_conv(filters_out, kernel_shape)
+        stream_out = stream_in.stationary_conv(
+            filters_out, kernel_shape, normalize=False
+        )
         stream_out.force_chronological()
 
         op = stream_out.source
@@ -246,7 +250,9 @@ class ComponentsTest(testing.TestCase, parameterized.TestCase):
         out_data = components.StreamData(
             coords_out, times_out, batch_splits_out, (grid_size // kernel_size,)
         )
-        stream_out = components.ExclusiveConv(stream, out_data, filters_out).outputs
+        stream_out = components.ExclusiveConv(
+            stream, out_data, filters_out, normalize=False
+        ).outputs
         stream_out.source.build()
         layer = stream_out.source.layer
         layer.kernel.assign(kernel)
@@ -320,7 +326,9 @@ class ComponentsTest(testing.TestCase, parameterized.TestCase):
         out_data = components.StreamData(
             coords_out, times_out, batch_splits_out, grid_shape_out
         )
-        stream_out = components.ExclusiveConv(stream, out_data, filters_out).outputs
+        stream_out = components.ExclusiveConv(
+            stream, out_data, filters_out, normalize=False
+        ).outputs
         stream_out.source.build()
         layer = stream_out.source.layer
         layer.kernel.assign(kernel)
