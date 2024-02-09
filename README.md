@@ -5,9 +5,25 @@
 ## Installation
 
 ```bash
-# custom ops
+# install tensorflow (CPU only required - used for data pipelining)
+# see https://www.tensorflow.org/install
+
+# install tensorflow-datasets
+pip install tensorflow-datasets
+
+# install jax (GPU highly recommended)
+# see https://jax.readthedocs.io/en/latest/installation.html
+
+# install keras-nightly (or keras-3.0 if it's been released)
+pip install keras-nightly
+
+# c++/cuda ops plus jax wrappers
 git clone https://github.com/jackd/jax-stsc-ops.git
 pip install -e jax-stsc-ops
+
+# custom datasets
+git clone https://github.com/jackd/events-tfds.git
+pip install -e events-tfds
 
 # various utility functions
 git clone https://github.com/jackd/jk-utils.git
