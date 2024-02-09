@@ -9,7 +9,10 @@ import numpy as np
 import tensorflow as tf
 import tree
 from events_tfds.events.cifar10_dvs import GRID_SHAPE, NUM_CLASSES
-from jk_neuro.data.transforms_tf import (
+
+from stsc.data.base import tfds_base_dataset
+from stsc.data.batching import batch_and_pad
+from stsc.data.transforms_tf import (
     FlipHorizontal,
     FlipTime,
     Maybe,
@@ -25,9 +28,6 @@ from jk_neuro.data.transforms_tf import (
     Transform,
     mask_valid_events,
 )
-
-from stsc.data.base import tfds_base_dataset
-from stsc.data.batching import batch_and_pad
 from stsc.models import wrappers
 from stsc.models.backbones import vgg
 
@@ -83,8 +83,8 @@ complex_conv = False
 dropout_rate = 0.5
 
 # min_dt = 1.2 * 1e6 / time_scale / 16
-# min_dt = 0.0
-min_dt = 1.0
+min_dt = 0.0
+# min_dt = 1.0
 max_events = batch_size * events_per_example - 1  # -1 so padding makes power of 2
 
 backend = keras.backend.backend()
@@ -162,6 +162,7 @@ if pool:
         simple_pooling=simple_pooling,
         reduction=reduction,
         complex_conv=complex_conv,
+        initial_sample_rate=8,
     )
 else:
     backbone_func = functools.partial(
@@ -170,6 +171,7 @@ else:
         filters0=filters0,
         min_dt=min_dt,
         complex_conv=complex_conv,
+        initial_sample_rate=8,
     )
 
 

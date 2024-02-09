@@ -9,7 +9,10 @@ import numpy as np
 import tensorflow as tf
 import tree
 from events_tfds.events.ncaltech101 import GRID_SHAPE, NUM_CLASSES
-from jk_neuro.data.transforms_tf import (
+
+from stsc.data.base import tfds_base_dataset
+from stsc.data.batching import batch_and_pad
+from stsc.data.transforms_tf import (
     FlipHorizontal,
     FlipTime,
     Maybe,
@@ -27,9 +30,6 @@ from jk_neuro.data.transforms_tf import (
     Transpose,
     mask_valid_events,
 )
-
-from stsc.data.base import tfds_base_dataset
-from stsc.data.batching import batch_and_pad
 from stsc.models import wrappers
 from stsc.models.backbones import vgg
 
@@ -42,8 +42,8 @@ num_classes = NUM_CLASSES
 # batch_size = 1024
 # batch_size = 256
 # batch_size = 128
-# batch_size = 64  # default
-batch_size = 32  # HACK
+# batch_size = 64
+batch_size = 32  # default
 # batch_size = 16
 # batch_size = 8
 # batch_size = 2
@@ -169,7 +169,8 @@ if pool:
         reduction=reduction,
         complex_conv=complex_conv,
         initial_stride=4,
-        initial_sample_rate=8,
+        # initial_sample_rate=8,
+        initial_sample_rate=4,
     )
 else:
     backbone_func = functools.partial(
@@ -179,7 +180,8 @@ else:
         min_dt=min_dt,
         complex_conv=complex_conv,
         initial_stride=4,
-        initial_sample_rate=8,  # default would be 4**2==16
+        # initial_sample_rate=8,  # default would be 4**2==16
+        initial_sample_rate=4,  # default would be 4**2==16
     )
 
 

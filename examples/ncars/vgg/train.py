@@ -9,7 +9,10 @@ import numpy as np
 import tensorflow as tf
 import tree
 from events_tfds.events.ncars import GRID_SHAPE, NUM_CLASSES
-from jk_neuro.data.transforms_tf import (
+
+from stsc.data.base import tfds_base_dataset
+from stsc.data.batching import batch_and_pad
+from stsc.data.transforms_tf import (
     Pad,
     PadToSquare,
     RandomCrop,
@@ -24,9 +27,6 @@ from jk_neuro.data.transforms_tf import (
     Transform,
     mask_valid_events,
 )
-
-from stsc.data.base import tfds_base_dataset
-from stsc.data.batching import batch_and_pad
 from stsc.models import wrappers
 from stsc.models.backbones import vgg
 
@@ -38,10 +38,10 @@ num_classes = NUM_CLASSES
 # batch_size = 2048
 # batch_size = 1024
 # batch_size = 512
-# batch_size = 256  # default. limit?
-batch_size = 128
+# batch_size = 256  # limit?
+# batch_size = 128  # default?
 # batch_size = 64
-# batch_size = 32
+batch_size = 32
 # batch_size = 16
 # batch_size = 8
 # batch_size = 2
@@ -73,8 +73,8 @@ weight_decay = 5e-4
 jit = True
 # jit = False
 # tf.debugging.enable_check_numerics()
-pool = False  # HACK
-# pool = True
+# pool = False  # HACK
+pool = True
 reduction = "mean"
 # reduction = "max"  # HACK
 simple_pooling = True

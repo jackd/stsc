@@ -101,8 +101,8 @@ def vgg_cnn_backbone(
 
     x = conv_block(
         x,
-        # filters0,
-        filters0 * 2,  # HACK
+        filters0,
+        # filters0 * 2,  # HACK
         initial_stride,
         initial_stride,
         min_dt=min_dt,
@@ -147,8 +147,8 @@ def vgg_pool_backbone(
 
     x = conv_block(
         x,
-        # filters0,
-        filters0 * 2,  # HACK
+        filters0,
+        # filters0 * 2,  # HACK
         initial_stride,
         initial_stride,
         min_dt=min_dt,

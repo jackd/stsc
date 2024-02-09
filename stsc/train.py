@@ -3,15 +3,14 @@ import typing as tp
 import keras
 import tensorflow as tf
 import tree
-from jk_neuro.data import transforms_tf
 
-from .data import batching
+from .data import batching, transforms_tf
 from .models import wrappers
 
 
 def map_and_pack(
     example,
-    grid_shape: tp.Tuple(int, int),
+    grid_shape: tp.Tuple[int, int],
     time_scale: float | None = None,
     transform: transforms_tf.Transform | None = None,
     rezero_times: bool = True,
@@ -27,7 +26,7 @@ def map_and_pack(
         example: structure of tensors in standard raw format
         grid_shape: (height, width) of event stream (limits on coords)
         time_scale: if given, times are divided by this value before transform
-        transform: jk_neuro.data.transforms_tf.Transform to apply, e.g. for data
+        transform: `stsc.data.transforms_tf.Transform` to apply, e.g. for data
             augmentation
         rezero_times: if given, time origin is reset, i.e. times <- times - times[0]
 
@@ -114,7 +113,16 @@ def _preprocessor_to_func(preprocessor):
                 (sample_weight_broadcast, sample_weight),
             )
 
-        return preprocessor_func
+    return preprocessor_func
+
+
+class LoggerCallback(keras.callbacks.Callback):
+    def __init__(self, print_fn: tp.Callable):
+        self.print_fn = print_fn
+
+    def on_epoch_end(self, epoch, logs=None):
+        logs_str = ", ".join(f"{k}: {logs[k]:.4f}" for k in sorted(logs))
+        self.print_fn(f"Epoch {epoch}: {logs_str}")
 
 
 def build_and_fit(
@@ -135,6 +143,8 @@ def build_and_fit(
     dropout_rate: float = 0.0,
     callbacks: tp.Sequence[keras.callbacks.Callback] = [],
     use_example_loss: bool = False,
+    num_parallel_calls: int = tf.data.AUTOTUNE,
+    verbose: bool = True,
 ):
     """
     Build and fit a model to data.
@@ -187,7 +197,6 @@ def build_and_fit(
         weighted_metrics=weighted_metrics,
         optimizer=optimizer,
         dropout_rate=dropout_rate,
-        stream_filter=lambda streams: streams[1:],
         use_example_loss=use_example_loss,
         max_events=max_events,
         batch_size=batch_size,
@@ -207,7 +216,7 @@ def build_and_fit(
             max_events=max_events,
             drop_remainder=True,
             map_fun=preprocessor_func,
-            num_parallel_calls=tf.data.AUTOTUNE,
+            num_parallel_calls=num_parallel_calls,
         )
         return dataset
 
@@ -225,6 +234,7 @@ def build_and_fit(
         steps_per_epoch=steps_per_epoch,
         validation_data=validation_data,
         callbacks=callbacks,
+        verbose=verbose,
     )
     if test_data is not None:
         test_result = model.evaluate(test_data, return_dict=True)

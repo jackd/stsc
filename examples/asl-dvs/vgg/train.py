@@ -1,15 +1,15 @@
 import functools
-import os
-import shutil
 import typing as tp
-from pathlib import Path
 
 import keras
 import numpy as np
 import tensorflow as tf
 import tree
 from events_tfds.events.asl_dvs import GRID_SHAPE, NUM_CLASSES
-from jk_neuro.data.transforms_tf import (  # RandomTemporalCropV2,; TemporalCropV2,
+
+from stsc.data.base import tfds_base_dataset
+from stsc.data.batching import batch_and_pad
+from stsc.data.transforms_tf import (  # RandomTemporalCropV2,; TemporalCropV2,
     FlipTime,
     Maybe,
     Pad,
@@ -24,23 +24,20 @@ from jk_neuro.data.transforms_tf import (  # RandomTemporalCropV2,; TemporalCrop
     Transpose,
     mask_valid_events,
 )
-
-from stsc.data.base import tfds_base_dataset
-from stsc.data.batching import batch_and_pad
 from stsc.models import wrappers
 from stsc.models.backbones import vgg
 
 # keras.config.disable_traceback_filtering()  # DEBUG
 
 # time_scale = 1e4
-time_scale = 1.1e5
+time_scale = 1.1e5 / 16  # TODO: test this, previous results may be based on missing /16
 grid_shape = GRID_SHAPE
 num_classes = NUM_CLASSES
 # batch_size = 1024
 # batch_size = 256
-batch_size = 128
+# batch_size = 128  # default
 # batch_size = 64
-# batch_size = 32
+batch_size = 32
 # batch_size = 16
 # batch_size = 8
 # batch_size = 2
@@ -168,7 +165,8 @@ if pool:
         reduction=reduction,
         complex_conv=complex_conv,
         initial_stride=4,
-        initial_sample_rate=4,
+        # initial_sample_rate=4,
+        initial_sample_rate=1,
     )
 else:
     backbone_func = functools.partial(
@@ -178,7 +176,8 @@ else:
         min_dt=min_dt,
         complex_conv=complex_conv,
         initial_stride=4,
-        initial_sample_rate=4,  # default would be 4**2==16
+        # initial_sample_rate=4,  # default would be 4**2==16
+        initial_sample_rate=1,  # default would be 4**2==16
     )
 
 
@@ -344,15 +343,15 @@ train_ds = preprocess_dataset(train_ds)
 train_ds = train_ds.prefetch(1)
 val_ds = preprocess_dataset(val_ds)
 
-print("Caching val_ds")
-# cache val dataset to reduce RAM usage
-tmp_dir = "/tmp/stsc/cache"
-if os.path.exists(tmp_dir):
-    shutil.rmtree(tmp_dir)
-Path(tmp_dir).mkdir(parents=True)
-val_ds.save(tmp_dir)
-val_ds = tf.data.Dataset.load(tmp_dir)
-print("Finished caching val_ds")
+# print("Caching val_ds")
+# # cache val dataset to reduce RAM usage
+# tmp_dir = "/tmp/stsc/cache"
+# if os.path.exists(tmp_dir):
+#     shutil.rmtree(tmp_dir)
+# Path(tmp_dir).mkdir(parents=True)
+# val_ds.save(tmp_dir)
+# val_ds = tf.data.Dataset.load(tmp_dir)
+# print("Finished caching val_ds")
 
 model.fit(
     train_ds,

@@ -14,7 +14,10 @@ from events_tfds.events.dvs_gesture import (
     GRID_SHAPE,
     NUM_CLASSES,
 )
-from jk_neuro.data.transforms_tf import (
+
+from stsc.data.base import tfds_base_dataset
+from stsc.data.batching import batch_and_pad
+from stsc.data.transforms_tf import (
     FlipHorizontal,
     FlipTime,
     Maybe,
@@ -32,9 +35,6 @@ from jk_neuro.data.transforms_tf import (
     Transpose,
     mask_valid_events,
 )
-
-from stsc.data.base import tfds_base_dataset
-from stsc.data.batching import batch_and_pad
 from stsc.models import wrappers
 from stsc.models.backbones import vgg
 
@@ -48,7 +48,7 @@ num_classes = NUM_CLASSES
 # batch_size = 256
 # batch_size = 128
 # batch_size = 64
-# batch_size = 32
+# batch_size = 32  # HACK
 batch_size = 16
 # batch_size = 8
 # batch_size = 2

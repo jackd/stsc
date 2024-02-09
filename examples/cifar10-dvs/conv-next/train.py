@@ -8,7 +8,10 @@ import keras
 import tensorflow as tf
 import tree
 from events_tfds.events.cifar10_dvs import GRID_SHAPE, NUM_CLASSES
-from jk_neuro.data.transforms_tf import (
+
+from stsc.data.base import tfds_base_dataset
+from stsc.data.batching import batch_and_pad
+from stsc.data.transforms_tf import (
     FlipHorizontal,
     FlipTime,
     Maybe,
@@ -22,9 +25,6 @@ from jk_neuro.data.transforms_tf import (
     Transform,
     mask_valid_events,
 )
-
-from stsc.data.base import tfds_base_dataset
-from stsc.data.batching import batch_and_pad
 from stsc.models import wrappers
 from stsc.models.backbones import conv_next
 

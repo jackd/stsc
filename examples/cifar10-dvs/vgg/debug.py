@@ -6,7 +6,11 @@ import tensorflow as tf
 import tqdm
 import tree
 from events_tfds.events.cifar10_dvs import GRID_SHAPE, NUM_CLASSES
-from jk_neuro.data.transforms_tf import (
+
+from stsc.components import input_stream
+from stsc.data.base import tfds_base_dataset
+from stsc.data.batching import batch_and_pad
+from stsc.data.transforms_tf import (
     FlipHorizontal,
     FlipTime,
     Maybe,
@@ -18,10 +22,6 @@ from jk_neuro.data.transforms_tf import (
     Transform,
     mask_valid_events,
 )
-
-from stsc.components import input_stream
-from stsc.data.base import tfds_base_dataset
-from stsc.data.batching import batch_and_pad
 from stsc.models.backbones.vgg import vgg_backbone
 
 keras.config.disable_traceback_filtering()  # DEBUG

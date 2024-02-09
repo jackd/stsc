@@ -1,0 +1,11 @@
+--duration=1.3e6
+--grid_shape=128,128
+--num_classes=10
+--events_per_example=262_144
+--dataset=cifar10_dvs
+--train_split=train[:90%]
+--validation_split=train[90%:]
+--test_split=
+--flip_horizontal=True
+--flip_temporal=True
+--initial_sample_rate=8

@@ -1,0 +1,12 @@
+--dataset=ncaltech101
+--train_split=train[:90%]
+--validation_split=train[90%:]
+--test_split=
+--duration=3e5
+--transpose=True
+--grid_shape=234,174
+--num_classes=102
+--events_per_example=131072
+--flip_horizontal=True
+--flip_temporal=True
+--initial_sample_rate=4

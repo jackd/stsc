@@ -1,0 +1,12 @@
+--dataset=asl_dvs
+--train_split=train[:90%]
+--validation_split=train[90%:]
+--test_split=
+--duration=1.1e5
+--grid_shape=240,180
+--transpose=True
+--num_classes=24
+--flip_temporal=True
+--events_per_example=32_768
+--initial_sample_rate=1
+--epochs=20

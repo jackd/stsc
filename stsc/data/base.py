@@ -64,7 +64,7 @@ class InfiniteSampler(tp.Iterable[T]):
         self.rng = np.random.default_rng(seed)
 
     def generate(self):
-        rng = np.random.default_rng(self.rng.integers(0, np.iinfo(np.int64).max))
+        rng = _spawn_rng(self.rng)
         size = len(self.sequence)
         while True:
             yield self.sequence[rng.integers(0, size)]
@@ -112,6 +112,10 @@ def _as_bytes_dataset(
         )
     )
     return dataset
+
+
+def tfds_cardinality(name: str, split: str) -> int:
+    return len(tfds.data_source(name, split=split))
 
 
 def tfds_base_dataset(
