@@ -6,4 +6,5 @@
 --grid_shape=100,120
 --num_classes=2
 --events_per_example=4_096
+--recenter=True
 --initial_sample_rate=1

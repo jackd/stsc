@@ -149,6 +149,7 @@ flags.DEFINE_float(
     "mean stream length after temporal rescaling",
     lower_bound=0.0,
 )
+flags.DEFINE_bool("recenter", False, "move stream to center before any translation")
 flags.DEFINE_integer(
     "translate", 10, "maximum augmentation pixel translate", lower_bound=0
 )
@@ -231,6 +232,7 @@ def main(_):
     test_split = FLAGS.test_split
     dataset = FLAGS.dataset
     transpose = FLAGS.transpose
+    recenter = FLAGS.recenter
 
     # data pipeline
     rescaled_duration = FLAGS.rescaled_duration
@@ -247,16 +249,17 @@ def main(_):
             num_classes,
         )
         flip_horizontal_label_map = tf.convert_to_tensor(
-            flip_horizontal_label_map, tf.int32
+            flip_horizontal_label_map, tf.int64
         )
     flip_temporal = FLAGS.flip_temporal
+    flip_temporal_label_map = FLAGS.flip_temporal_label_map
     if flip_temporal_label_map:
         assert len(flip_temporal_label_map) == num_classes, (
             len(flip_temporal_label_map),
             num_classes,
         )
         flip_temporal_label_map = tf.convert_to_tensor(
-            flip_temporal_label_map, tf.int32
+            flip_temporal_label_map, tf.int64
         )
     batch_size = FLAGS.batch_size
     cache_validation_data = FLAGS.cache_validation_data
@@ -289,7 +292,9 @@ def main(_):
     train_transforms = []
     if transpose:
         train_transforms.append(Transpose())
-    train_transforms.extend((Recenter(), PadToSquare()))
+    if recenter:
+        train_transforms.append(Recenter())
+    train_transforms.append(PadToSquare())
     if rotate:
         train_transforms.append(RandomRotate(rotate))
     if zoom and zoom != (1, 1):
@@ -310,7 +315,9 @@ def main(_):
     test_transforms = []
     if transpose:
         test_transforms.append(Transpose())
-    test_transforms.extend((Recenter(), PadToSquare(), Resize(rescaled_grid_shape)))
+    if recenter:
+        test_transforms.append(Recenter())
+    test_transforms.extend((PadToSquare(), Resize(rescaled_grid_shape)))
     if temporal_crop:
         test_transforms.append(TemporalCropV2(temporal_crop / 2, 1 - temporal_crop))
 
@@ -318,33 +325,30 @@ def main(_):
     test_transform = SeriesTransform(*test_transforms)
 
     time_scale = duration / rescaled_duration
+    data_kwargs = {
+        "time_scale": time_scale,
+        "grid_shape": grid_shape,
+        "expected_grid_shape": rescaled_grid_shape,
+    }
 
     train_data = tfds_base_dataset(
         dataset,
         train_split,
         map_fun=functools.partial(
-            map_and_pack,
-            time_scale=time_scale,
-            grid_shape=grid_shape,
-            expected_grid_shape=rescaled_grid_shape,
-            transform=train_transform,
+            map_and_pack, transform=train_transform, **data_kwargs
         ),
         shuffle=True,
         infinite=True,
         replace=True,
         seed=int(keras.random.randint((), 0, np.iinfo(np.int32).max)),
-        num_parallel_calls=8,
+        num_parallel_calls=4,
     )
     if validation_split:
         validation_data = tfds_base_dataset(
             dataset,
             validation_split,
             map_fun=functools.partial(
-                map_and_pack,
-                grid_shape=grid_shape,
-                time_scale=time_scale,
-                expected_grid_shape=rescaled_grid_shape,
-                transform=test_transform,
+                map_and_pack, transform=test_transform, **data_kwargs
             ),
             num_parallel_calls=2,
         )
@@ -355,13 +359,9 @@ def main(_):
             dataset,
             test_split,
             map_fun=functools.partial(
-                map_and_pack,
-                grid_shape=grid_shape,
-                time_scale=time_scale,
-                expected_grid_shape=rescaled_grid_shape,
-                transform=test_transform,
+                map_and_pack, transform=test_transform, **data_kwargs
             ),
-            num_parallel_calls=1,  # only used once - would suck to OOM
+            num_parallel_calls=1,  # only iterated over once at end, would suck to OOM
         )
     else:
         test_data = None
@@ -444,7 +444,7 @@ def main(_):
             dropout_rate=dropout_rate,
             callbacks=callbacks,
             verbose=verbose,
-            num_parallel_calls=8,  # HACK
+            num_parallel_calls=4,  # HACK
         )
 
     if cache_validation_data:
