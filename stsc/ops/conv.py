@@ -235,8 +235,8 @@ def one_hot_exclusive_conv(
     Args:
         dt: [E_in]
         times_out: [E_out]
-        decay_rate: [C_in] or [C_in // 2] tuple (complex components)
-        kernel[K, C_in, C_out]
+        decay_rate: [C_in, M] or [C_in // 2, M] tuple (complex components)
+        kernel[K, C_in*M, C_out]
         successor_kernel_channel_ids: [E_in] in [0, E_out * K * C_in]
         segment_ids_out: [E_out]
 
@@ -271,12 +271,12 @@ def one_hot_exclusive_depthwise_conv(
     Args:
         dt: [E_in]
         times_out: [E_out]
-        decay_rate: [C] of [C // 2] tuple (complex components)
+        decay_rate: [C, M] of [C // 2, M] tuple (complex components)
         successor_kernel_channel_ids: [E_in] in [0, E_out * K * P]
         segment_ids_out: [E_out]
 
     Returns:
-        [E_out, K, C]
+        [E_out, K, C*M]
     """
     K, _ = kernel.shape
     x = patch_ops.get_one_hot_exclusive_patches(

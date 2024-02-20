@@ -145,6 +145,7 @@ def build_and_fit(
     use_example_loss: bool = False,
     num_parallel_calls: int = tf.data.AUTOTUNE,
     verbose: bool = True,
+    temporal_split: bool = False,
 ):
     """
     Build and fit a model to data.
@@ -175,6 +176,13 @@ def build_and_fit(
         use_example_loss: if True, the loss is calculated as an average of all stream
             inferences. If False, loss is calculated as the average loss over all
             stream inferences.
+        num_parallel_calls: used in `tf.data.Dataset.map` calls.
+        verbose: see `keras.Model.fit`.
+        temporal_split: if True, each example is split into two at a random point during
+            training and the batch size is doubled. Furing validation/testing examples
+            are not split, but batches are padded to create the same doubled batch size,
+            albeit with only the original `batch_size` examples having non-zero
+            `sample_weight`.
 
     Returns:
         (model, history) or (model, history, test_result) if `test_data` is given.
@@ -199,7 +207,7 @@ def build_and_fit(
         dropout_rate=dropout_rate,
         use_example_loss=use_example_loss,
         max_events=max_events,
-        batch_size=batch_size,
+        batch_size=batch_size * 2 if temporal_split else batch_size,
         backbone_func=backbone_func,
         grid_shape=grid_shape,
         num_classes=num_classes,
@@ -207,7 +215,7 @@ def build_and_fit(
     )
     preprocessor_func = _preprocessor_to_func(preprocessor)
 
-    def preprocess_dataset(dataset: tf.data.Dataset | None):
+    def preprocess_dataset(dataset: tf.data.Dataset | None, dummy_temporal_split: bool):
         if dataset is None:
             return None
         dataset = batching.batch_and_pad(
@@ -217,12 +225,14 @@ def build_and_fit(
             drop_remainder=True,
             map_fun=preprocessor_func,
             num_parallel_calls=num_parallel_calls,
+            temporal_split=temporal_split,
+            dummy_temporal_split=dummy_temporal_split,
         )
         return dataset
 
-    train_data = preprocess_dataset(train_data)
-    validation_data = preprocess_dataset(validation_data)
-    test_data = preprocess_dataset(test_data)
+    train_data = preprocess_dataset(train_data, dummy_temporal_split=False)
+    validation_data = preprocess_dataset(validation_data, dummy_temporal_split=True)
+    test_data = preprocess_dataset(test_data, dummy_temporal_split=True)
 
     steps_per_epoch = examples_per_epoch // batch_size + int(
         bool(examples_per_epoch % batch_size)

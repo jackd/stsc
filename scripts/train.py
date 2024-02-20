@@ -24,7 +24,7 @@ from stsc.data.transforms_tf import (
     TemporalCropV2,
     Transpose,
 )
-from stsc.models.backbones import vgg
+from stsc.models.backbones import conv_next, vgg
 from stsc.train import LoggerCallback, build_and_fit, map_and_pack
 
 assert keras.backend.backend() == "jax", keras.backend.backend()
@@ -168,6 +168,7 @@ flags.DEFINE_bool(
 DEFINE_integers("flip_temporal_label_map", (), "label map for temporal flip")
 flags.DEFINE_integer("batch_size", 32, "batch size", lower_bound=1)
 flags.DEFINE_bool("cache_validation_data", True, "cache validation dataset")
+flags.DEFINE_bool("temporal_split", False, "split training examples in 2")
 
 
 # optimizer
@@ -184,11 +185,10 @@ flags.DEFINE_bool(
 )
 
 # model
+flags.DEFINE_bool("conv_next", False, "use conv_next backbone")
 flags.DEFINE_integer("filters0", 64, "Initial number of filters", lower_bound=8)
-flags.DEFINE_bool(
-    "pool",
-    True,
-    "use pooling layers rather than exclusive convs after first exclusive conv",
+flags.DEFINE_enum(
+    "backbone", "vgg", ["vgg", "vgg_cnn", "conv_next"], "backbone architecture"
 )
 flags.DEFINE_float(
     "min_dt", 0.0, "refactory period between sampled points", lower_bound=0
@@ -251,6 +251,8 @@ def main(_):
         flip_horizontal_label_map = tf.convert_to_tensor(
             flip_horizontal_label_map, tf.int64
         )
+    else:
+        flip_horizontal_label_map = None
     flip_temporal = FLAGS.flip_temporal
     flip_temporal_label_map = FLAGS.flip_temporal_label_map
     if flip_temporal_label_map:
@@ -261,8 +263,11 @@ def main(_):
         flip_temporal_label_map = tf.convert_to_tensor(
             flip_temporal_label_map, tf.int64
         )
+    else:
+        flip_temporal_label_map = None
     batch_size = FLAGS.batch_size
     cache_validation_data = FLAGS.cache_validation_data
+    temporal_split = FLAGS.temporal_split
 
     keras.utils.set_random_seed(seed)
 
@@ -276,8 +281,9 @@ def main(_):
     exclude_decay_rate_from_weight_decay = FLAGS.exclude_decay_rate_from_weight_decay
 
     # model
+    FLAGS.conv_next
     filters0 = FLAGS.filters0
-    pool = FLAGS.pool
+    backbone = FLAGS.backbone
     min_dt = FLAGS.min_dt
     simple_pooling = FLAGS.simple_pooling
     reduction = FLAGS.reduction
@@ -304,6 +310,7 @@ def main(_):
         train_transforms.extend((Pad(translate), RandomCrop(rescaled_grid_shape)))
     if temporal_crop:
         train_transforms.append(RandomTemporalCropV2(temporal_crop))
+        # train_transforms.append(RandomTemporalCropV3(temporal_crop))
     if flip_horizontal:
         train_transforms.append(
             Maybe(FlipHorizontal(label_map=flip_horizontal_label_map))
@@ -370,7 +377,8 @@ def main(_):
         bool(examples_per_epoch % batch_size)
     )
 
-    if pool:
+    if backbone == "vgg":
+        # standard vgg with pooling between different resolutions
         backbone_func = functools.partial(
             vgg.vgg_pool_backbone,
             activation="relu",
@@ -382,7 +390,8 @@ def main(_):
             initial_stride=initial_stride,
             initial_sample_rate=initial_sample_rate,
         )
-    else:
+    elif backbone == "vgg_cnn":
+        # vgg with final conv and pooling merged into a single strided conv
         backbone_func = functools.partial(
             vgg.vgg_cnn_backbone,
             activation="relu",
@@ -392,6 +401,17 @@ def main(_):
             initial_stride=initial_stride,
             initial_sample_rate=initial_sample_rate,
         )
+    elif backbone == "conv_next":
+        backbone_func = functools.partial(
+            conv_next.conv_next_backbone,
+            filters0=filters0,
+            min_dt=min_dt,
+            complex_conv=complex_conv,
+            initial_stride=initial_stride,
+            initial_sample_rate=initial_sample_rate,
+        )
+    else:
+        raise NotImplementedError(f"backbone '{backbone}' not supported.")
 
     # optimizer
     lr = keras.optimizers.schedules.CosineDecay(
@@ -444,6 +464,7 @@ def main(_):
             dropout_rate=dropout_rate,
             callbacks=callbacks,
             verbose=verbose,
+            temporal_split=temporal_split,
             num_parallel_calls=4,  # HACK
         )
 

@@ -516,11 +516,13 @@ class OneHotExclusiveConv(_ConvBase):
         filters_in: int,
         filters_out: int,
         kernel_size: int,
+        channel_multiplier: int = 1,
         **kwargs,
     ):
         self.filters_in = filters_in
         self.filters_out = filters_out
         self.kernel_size = kernel_size
+        self.channel_multiplier = channel_multiplier
         super().__init__(**kwargs)
 
     def get_config(self):
@@ -529,6 +531,7 @@ class OneHotExclusiveConv(_ConvBase):
             filters_in=self.filters_in,
             filters_out=self.filters_out,
             kernel_size=self.kernel_size,
+            channel_multiplier=self.channel_multiplier,
         )
         return config
 
@@ -542,8 +545,12 @@ class OneHotExclusiveConv(_ConvBase):
         if self.built:
             return
         self.built = True
-        decay_rate_shape = (self.filters_in,)
-        kernel_shape = (self.kernel_size, self.filters_in, self.filters_out)
+        decay_rate_shape = (self.filters_in, self.channel_multiplier)
+        kernel_shape = (
+            self.kernel_size,
+            self.filters_in * self.channel_multiplier,
+            self.filters_out,
+        )
         bias_shape = (self.filters_out,)
         self._build_base_conv_parameters(decay_rate_shape, kernel_shape, bias_shape)
 

@@ -109,12 +109,12 @@ def one_hot_exclusive_pooling(
     Args:
         dt: [E_in]
         times_out: [E_out]
-        decay_rate: [P] or ([P // 2], [P // 2]) complex components
+        decay_rate: [P, M] or ([P // 2, M], [P // 2, M]) complex components
         successor_kernel_channel_ids: [E_in] in [0, E_out * K * P]
         segment_ids_out: [E_out]
 
     Returns:
-        [E_out, P]
+        [E_out, P * M]
     """
     x = patch_ops.get_one_hot_exclusive_patches(
         dt=dt,

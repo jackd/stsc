@@ -41,22 +41,25 @@ def pad_features_to_max_events(
     times.set_shape((max_events,))
     features.set_shape((max_events, *features.shape[1:]))
 
-    row_ends = splits[1:]
-    batch_mask = row_ends <= max_events
-    num_valid_events = tf.reduce_max(
-        tf.where(batch_mask, row_ends, tf.zeros_like(row_ends))
-    )
-    event_mask = tf.range(max_events) < num_valid_events
-    times = tf.where(event_mask, times, tf.zeros_like(times))
-    coords = tf.where(tf.expand_dims(event_mask, 1), coords, tf.zeros_like(coords))
-    features = tf.where(
-        tf.reshape(event_mask, (-1,) + (1,) * (len(features.shape) - 1)),
-        features,
-        tf.zeros_like(features),
-    )
-    splits = tf.minimum(splits, num_valid_events)
+    splits = tf.minimum(splits, max_events)
+    return times, coords, features, splits
 
-    return times, coords, features, splits, batch_mask
+    # row_ends = splits[1:]
+    # batch_mask = row_ends <= max_events
+    # num_valid_events = tf.reduce_max(
+    #     tf.where(batch_mask, row_ends, tf.zeros_like(row_ends))
+    # )
+    # event_mask = tf.range(max_events) < num_valid_events
+    # times = tf.where(event_mask, times, tf.zeros_like(times))
+    # coords = tf.where(tf.expand_dims(event_mask, 1), coords, tf.zeros_like(coords))
+    # features = tf.where(
+    #     tf.reshape(event_mask, (-1,) + (1,) * (len(features.shape) - 1)),
+    #     features,
+    #     tf.zeros_like(features),
+    # )
+    # splits = tf.minimum(splits, num_valid_events)
+
+    # return times, coords, features, splits, batch_mask
 
 
 def batch_and_pad(
@@ -67,6 +70,8 @@ def batch_and_pad(
     num_parallel_calls: int = tf.data.AUTOTUNE,
     deterministic: bool = False,
     map_fun: tp.Callable | None = None,
+    temporal_split: bool = False,
+    dummy_temporal_split: bool = True,
 ) -> tf.data.Dataset:
     def full_map_fun(features, labels):
         times, coords, polarities = features
@@ -75,21 +80,35 @@ def batch_and_pad(
         coords = coords.flat_values
         polarities = polarities.flat_values
 
-        times, coords, polarities, splits, batch_mask = pad_features_to_max_events(
+        # times, coords, polarities, splits, batch_mask = pad_features_to_max_events(
+        #     times, coords, polarities, splits, max_events
+        # )
+        times, coords, polarities, splits = pad_features_to_max_events(
             times, coords, polarities, splits, max_events
         )
+        lengths = tf.experimental.numpy.diff(splits)
 
-        if splits.shape[0] is None:
-            labels = pad_to_length(labels, batch_size)
-            batch_mask = pad_to_length(batch_mask, batch_size)
-            splits = pad_to_length(splits, batch_size + 1, constant_values=splits[-1])
+        # if splits.shape[0] is None:
+        #     labels = pad_to_length(labels, batch_size)
+        #     batch_mask = pad_to_length(batch_mask, batch_size)
+        #     splits = pad_to_length(splits, batch_size + 1, constant_values=splits[-1])
 
-        # lengths = ragged.splits_to_lengths(splits)
-        # ids = ragged.splits_to_ids(splits)
-        # lengths = tf.cast(lengths, tf.float32)
-        # sample_weight = tf.gather(
-        #     tf.where(lengths == 0, tf.zeros_like(lengths), 1 / lengths), ids
-        # )
+        if temporal_split:
+            labels = tf.reshape(tf.tile(tf.expand_dims(labels, 1), (1, 2)), (-1,))
+            if dummy_temporal_split:
+                lengths = tf.stack((lengths, tf.zeros_like(lengths)), axis=-1)
+            else:
+                example_lengths = tf.cast(
+                    tf.random.uniform((batch_size,)) * tf.cast(lengths, tf.float32),
+                    lengths.dtype,
+                )
+                lengths = tf.stack(
+                    (example_lengths, lengths - example_lengths), axis=-1
+                )
+            lengths = tf.reshape(lengths, (-1,))
+            splits = tf.pad(tf.cumsum(lengths, axis=0), [[1, 0]])
+
+        batch_mask = lengths > 0
         sample_weight = tf.cast(batch_mask, tf.float32)
 
         inputs = (times, coords, polarities, splits)

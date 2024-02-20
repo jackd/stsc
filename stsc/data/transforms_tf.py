@@ -28,14 +28,17 @@ def valid_mask(coords: tf.Tensor, grid_shape: tp.Tuple[int, ...]):
     return tf.reduce_all(tf.logical_and(coords >= 0, coords < grid_shape), axis=-1)
 
 
-def mask_valid_events(stream: StreamData) -> StreamData:
-    mask = valid_mask(stream.coords, stream.grid_shape)
+def mask_events(stream: StreamData, mask: tf.Tensor) -> StreamData:
     return StreamData(
         stream.coords[mask],
         stream.times[mask],
         stream.polarity[mask],
         stream.grid_shape,
     )
+
+
+def mask_valid_events(stream: StreamData) -> StreamData:
+    return mask_events(stream, valid_mask(stream.coords, stream.grid_shape))
 
 
 T = tp.TypeVar("T")
@@ -543,6 +546,29 @@ class RandomTemporalCropV2(_TemporalCropV2[tf.Tensor]):
         self, frames_or_stream: tf.Tensor | StreamData, label=None, sample_weight=None
     ) -> tf.Tensor:
         return tf.random.uniform(())
+
+
+class RandomTemporalCropV3(Transform[tf.Tensor]):
+    def __init__(self, max_initial_skip_frac: float):
+        self.max_initial_skip_frac = max_initial_skip_frac
+
+    def get_transformation(
+        self,
+        frames_or_stream: tf.Tensor | StreamData,
+        label=None,
+        sample_weight=None,
+    ) -> T:
+        return tf.random.uniform((), minval=0.0, maxval=self.max_initial_skip_frac)
+
+    def transform_stream(
+        self, stream: StreamData, transformation: tf.Tensor
+    ) -> StreamData:
+        t_start = stream.times[0]
+        t_stop = stream.times[-1]
+        dt = t_stop - t_start
+        t_start = t_start + transformation * dt
+        mask = stream.times >= t_start
+        return mask_events(stream, mask)
 
 
 class TemporalCropV2(_TemporalCropV2[None]):

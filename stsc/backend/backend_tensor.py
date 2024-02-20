@@ -1,17 +1,12 @@
 from keras import backend
 
 if backend.backend() == "tensorflow":
-    import tensorflow as tf
-
-    BackendTensor = tf.Tensor
+    pass
 elif backend.backend() == "jax":
-    import jax.numpy as jnp
+    pass
 
-    BackendTensor = jnp.ndarray
 elif backend.backend() == "torch":
-    import torch
-
-    BackendTensor = torch.Tensor
+    pass
 else:
     raise RuntimeError(
         f"keras backend {backend.backend()} not supported. "

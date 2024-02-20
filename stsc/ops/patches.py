@@ -205,10 +205,12 @@ class GetOneHotExclusivePatches(Operation):
         segment_ids_out: KerasTensor,
     ) -> KerasTensor:
         if isinstance(decay_rate, Tensor):
-            filters = decay_rate.shape[0]
+            filters, channel_multiplier = decay_rate.shape
+            filters = filters * channel_multiplier
             dtype = filters.dtype
         else:
-            filters = decay_rate[0].shape[0] * 2
+            filters, channel_multiplier = decay_rate[0].shape
+            filters = filters * channel_multiplier * 2
             dtype = decay_rate[0].dtype
         return KerasTensor((segment_ids_out.shape[0], self.kernel_size, filters), dtype)
 

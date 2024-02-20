@@ -252,18 +252,18 @@ def get_one_hot_exclusive_patches(
     Args:
         dt: [E_in]
         times_out: [E_out]
-        decay_rate: [P] or ([P // 2], [P // 2]) complex components
+        decay_rate: [P, M] or ([P // 2, M], [P // 2, M]) complex components
         successor_kernel_channel_ids: [E_in] in [0, E_out * kernel_size * P]
         segment_ids_out: [E_out]
 
     Returns:
-        [E_out, kernel_size, P]
+        [E_out, kernel_size, P * M]
     """
     is_complex = isinstance(decay_rate, (list, tuple))
     if is_complex:
         _assert_is_complex(decay_rate)
         decay_rate_real, decay_rate_imag = decay_rate
-        (P,) = decay_rate_real.shape
+        (P, M) = decay_rate_real.shape
 
         def scale_take_dt(dt, filter_ids):
             real_features_mask = ops.cast(filter_ids // P, "bool")
@@ -282,7 +282,7 @@ def get_one_hot_exclusive_patches(
 
     else:
         assert isinstance(decay_rate, BackendTensor), decay_rate
-        (P,) = decay_rate.shape
+        (P, M) = decay_rate.shape
 
         def scale_take_dt(dt, filter_ids):
             return ops.take(decay_rate, filter_ids, axis=0) * dt
@@ -293,6 +293,7 @@ def get_one_hot_exclusive_patches(
     (E_in,) = dt.shape
     (E_out,) = times_out.shape
     assert segment_ids_out.shape == (E_out,)
+    dt = ops.expand_dims(dt, axis=1)
     filter_ids = successor_kernel_channel_ids % P
     # TODO: is the masking below necessary? Check jax particularly
     # dt = ops.pad(
@@ -304,26 +305,27 @@ def get_one_hot_exclusive_patches(
     #     [[1, 0]],
     # )
     dt = -dt
-    scaled_dt = scale_take_dt(dt, filter_ids)
-    weights = complex_ops.exp(scaled_dt)
+    scaled_dt = scale_take_dt(dt, filter_ids)  # [E_in, M]
+    weights = complex_ops.exp(scaled_dt)  # [E_in, M]
     x = segment_ops.segment_sum(
         weights,
         successor_kernel_channel_ids,
         num_segments=E_out * kernel_size * P,
         indices_are_sorted=indices_are_sorted,
-    )  # [E_out * K, P]
-    x = ops.reshape(x, (E_out, kernel_size, P))  # [E_out, K, P]
+    )  # [E_out * K * P, M]
+    x = ops.reshape(x, (E_out, kernel_size, P * M))  # [E_out, K, P * M]
     dt_out = ops.diff(times_out)
+    dt_out = ops.reshape(dt_out, (-1, 1, 1))
     # TODO: is the masking below necessary? Check jax particularly
     # dt_out = ops.where(
     #     segment_ids_out[:-1] == segment_ids_out[1:], dt_out, ops.zeros_like(dt_out)
     # )
     factors = ops.pad(
-        complex_ops.exp(scale_dt(-ops.expand_dims(dt_out, -1))), [[1, 0], [0, 0]]
-    )  # [E_out, P]
-    factors = ops.expand_dims(factors, axis=1)  # [E_out, 1, P]
+        complex_ops.exp(scale_dt(-dt_out)), [[1, 0], [0, 0], [0, 0]]
+    )  # [E_out, P, M]
+    factors = ops.reshape(factors, (E_out, 1, P * M))  # [E_out, 1, P * M]
     segment_ids_out = ops.reshape(segment_ids_out, (-1, 1, 1))  # [E_out, 1, 1]
-    x = ema_ops.segment_ema(x, factors, segment_ids_out, axis=0)  # [E_out, K, P]
+    x = ema_ops.segment_ema(x, factors, segment_ids_out, axis=0)  # [E_out, K, P * M]
     if is_complex:
         x = ops.concatenate((ops.real(x), ops.imag(x)), axis=-1)
     return x

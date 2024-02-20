@@ -28,8 +28,13 @@ class _PoolingBase(layers.Layer):
         return config
 
     def _build_decay_rate(self, filters: int):
+        shape = (
+            (filters,)
+            if not hasattr(self, "channel_multiplier")
+            else (filters, self.channel_multiplier)
+        )
         self.decay_rate = self.add_weight(
-            (filters,),
+            shape,
             initializer=self.decay_rate_initializer,
             name="decay_rate",
         )
@@ -221,6 +226,7 @@ class OneHotExclusivePooling(_PoolingBase):
         self,
         filters: int,
         stride: int,
+        channel_multiplier: int = 1,
         reduction: str = "mean",
         *args,
         **kwargs,
@@ -228,6 +234,7 @@ class OneHotExclusivePooling(_PoolingBase):
         super().__init__(reduction, *args, **kwargs)
         self.filters = filters
         self.stride = stride
+        self.channel_multiplier = channel_multiplier
 
     def build(
         self,
@@ -243,7 +250,11 @@ class OneHotExclusivePooling(_PoolingBase):
 
     def get_config(self):
         config = super().get_config()
-        config.update(filters=self.filters, stride=self.stride)
+        config.update(
+            filters=self.filters,
+            stride=self.stride,
+            channel_multiplier=self.channel_multiplier,
+        )
         return config
 
     def _pool(

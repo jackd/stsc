@@ -1,29 +1,9 @@
 import typing as tp
 
 import keras
-import numpy as np
 
 from ... import components
-
-# from jk_utils.layers.masked_batch_norm import MaskedBatchNormalization
-
-
-class _default:
-    pass
-
-
-DEFAULT = _default()
-
-
-def complex_decay_rate_activation(x):
-    real, imag = keras.ops.split(x, 2, axis=-1)
-    real = keras.ops.tanh(real)
-    real_abs = keras.ops.abs(real)
-    rate_real = -keras.ops.log(real_abs)
-    rate_imag = keras.ops.where(
-        real < 0, imag + keras.ops.convert_to_tensor(np.pi, x.dtype), imag
-    )
-    return rate_real, rate_imag
+from .utils import DEFAULT, get_decay_rate_activation
 
 
 def conv_block(
@@ -55,13 +35,7 @@ def conv_block(
         activation=activation,
         bias_initializer=bias_initializer,
     )
-    if complex_conv:
-        kwargs.update(
-            decay_rate_activation=complex_decay_rate_activation,
-            decay_rate_initializer=keras.initializers.RandomNormal(stddev=1.0),
-        )
-    else:
-        kwargs.update(decay_rate_activation=keras.ops.softplus)
+    kwargs.update(decay_rate_activation=get_decay_rate_activation(complex_conv))
     if stride is not None:
         assert stride == kernel_size, (stride, kernel_size)
         if sample_rate is None:
@@ -110,6 +84,8 @@ def vgg_cnn_backbone(
         sample_rate=initial_sample_rate,
         activation=activation if initial_activation is DEFAULT else initial_activation,
         complex_conv=complex_conv,
+        # channel_multiplier=filters0 // 2,
+        channel_multiplier=1,
     )  # (32, 32)
 
     streams.append(x)
@@ -156,6 +132,8 @@ def vgg_pool_backbone(
         sample_rate=initial_sample_rate,
         activation=activation if initial_activation is DEFAULT else initial_activation,
         complex_conv=complex_conv,
+        # channel_multiplier=filters0 // 2,
+        channel_multiplier=1,
     )  # (32, 32)
 
     x = conv_block(x, filters0 * 2, **conv_kwargs)
