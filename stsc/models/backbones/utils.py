@@ -11,7 +11,7 @@ DEFAULT = _default()
 
 
 def complex_decay_rate_activation(x):
-    real, imag = keras.ops.split(x, 2, axis=-1)
+    real, imag = keras.ops.split(x, 2, axis=0)
     real = keras.ops.softplus(real)
     return real, imag
 

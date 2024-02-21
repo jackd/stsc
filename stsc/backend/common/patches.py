@@ -34,6 +34,9 @@ def get_patches(
         def scale_dt(dt):
             return complex_ops.complex(decay_rate_real * dt, decay_rate_imag * dt)
 
+        def scale_dt_real(dt):
+            return decay_rate_real * dt
+
     else:
 
         def scale_dt(dt):
@@ -55,7 +58,19 @@ def get_patches(
     #     features = features * (ops.ones_like(factors) - factors)
     x = ema_ops.ema(features, factors, axis=0)  # [E_in, C_in]
     if normalize:
-        denom = ema_ops.ema(ops.ones_like(features), factors, axis=0)
+        if is_complex:
+            denom_factors = ops.exp(scale_dt_real(dt))
+            denom_factors = ops.where(
+                ops.expand_dims(same_segment, 1),
+                denom_factors,
+                ops.zeros_like(denom_factors),
+            )
+            denom_factors = ops.pad(denom_factors, [[1, 0], [0, 0]])  # [E_in, C_in]
+            denom = ema_ops.ema(
+                ops.ones_like(ops.real(features)), denom_factors, axis=0
+            )
+        else:
+            denom = ema_ops.ema(ops.ones_like(features), factors, axis=0)
         x = ops.where(denom == 0, ops.zeros_like(x), x / denom)
     x = ops.where(ops.isfinite(x), x, ops.zeros_like(x))  # HACK
 
@@ -272,7 +287,7 @@ def get_one_hot_exclusive_patches(
             imag = ops.take(decay_rate_imag, filter_ids, axis=0) * dt
 
             return ops.where(
-                real_features_mask,
+                ops.expand_dims(real_features_mask, -1),
                 complex_ops.complex(real, imag),
                 complex_ops.complex(-imag, real),  # multiplied by i
             )
@@ -293,7 +308,7 @@ def get_one_hot_exclusive_patches(
     (E_in,) = dt.shape
     (E_out,) = times_out.shape
     assert segment_ids_out.shape == (E_out,)
-    dt = ops.expand_dims(dt, axis=1)
+    dt = ops.expand_dims(dt, axis=-1)
     filter_ids = successor_kernel_channel_ids % P
     # TODO: is the masking below necessary? Check jax particularly
     # dt = ops.pad(
