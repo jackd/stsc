@@ -1,8 +1,9 @@
+import tempfile
 import typing as tp
 
 import keras
 import tensorflow as tf
-import tree
+from absl import logging
 
 from .data import batching, transforms_tf
 from .models import wrappers
@@ -62,72 +63,22 @@ def map_and_pack(
     return (times, coords, polarity), label
 
 
-def _preprocessor_to_func(preprocessor):
-    backend = keras.backend.backend()
-    if backend == "jax":
-        import jax
-
-        jax_preprocessor = jax.jit(lambda *args: preprocessor(args), backend="cpu")
-
-        def preprocessor_func(inputs, labels, sample_weight):
-            preprocessor_inputs = tuple(tree.flatten((inputs, labels, sample_weight)))
-
-            output = tf.numpy_function(
-                jax_preprocessor,
-                preprocessor_inputs,
-                Tout=tuple(x.dtype for x in preprocessor.output),
-                stateful=False,
-            )
-            output = tuple(output)
-            tree.map_structure(
-                lambda o, t: o.set_shape(t.shape), output, preprocessor.output
-            )
-            (
-                *model_inputs,
-                labels_broadcast,
-                labels,
-                sample_weight_broadcast,
-                sample_weight,
-            ) = output
-            return (
-                tuple(model_inputs),
-                (labels_broadcast, labels),
-                (sample_weight_broadcast, sample_weight),
-            )
-
-    else:
-        assert backend == "tensorflow", backend
-
-        @tf.function
-        def preprocessor_func(inputs, labels, sample_weight):
-            (
-                *model_inputs,
-                labels_broadcast,
-                labels,
-                sample_weight_broadcast,
-                sample_weight,
-            ) = preprocessor(tree.flatten((inputs, labels, sample_weight)))
-            return (
-                tuple(model_inputs),
-                (labels_broadcast, labels),
-                (sample_weight_broadcast, sample_weight),
-            )
-
-    return preprocessor_func
-
-
 class LoggerCallback(keras.callbacks.Callback):
-    def __init__(self, print_fn: tp.Callable):
+    def __init__(
+        self, *, format_fn=lambda k, v: f"{k}: {v:.4f}", print_fn: tp.Callable = print
+    ):
         self.print_fn = print_fn
+        self.format_fn = format_fn
 
     def on_epoch_end(self, epoch, logs=None):
-        logs_str = ", ".join(f"{k}: {logs[k]:.4f}" for k in sorted(logs))
+        logs_str = ", ".join(self.format_fn(k, logs[k]) for k in sorted(logs))
         self.print_fn(f"Epoch {epoch}: {logs_str}")
 
 
 def build_and_fit(
     grid_shape: tp.Tuple[int, int],
     batch_size: int,
+    num_frames: int,
     num_classes: int,
     events_per_example: int,
     epochs: int,
@@ -141,11 +92,13 @@ def build_and_fit(
     examples_per_epoch: int | None = None,
     stream_filter: tp.Callable = lambda streams: streams[1:],
     dropout_rate: float = 0.0,
+    normalize_heads: bool = False,
     callbacks: tp.Sequence[keras.callbacks.Callback] = [],
     use_example_loss: bool = False,
     num_parallel_calls: int = tf.data.AUTOTUNE,
     verbose: bool = True,
     temporal_split: bool = False,
+    cache_validation_data: bool = False,
 ):
     """
     Build and fit a model to data.
@@ -172,6 +125,8 @@ def build_and_fit(
             streams such that losses/metrics are only applied to a subset.
         dropout_rate: applied to features at each event stream prior to final
             classification layer.
+        normalize_heads: if True, applies LayerNormalization to each head prior to
+            dropout / final classification layer.
         callbacks: see `keras.Model.fit`
         use_example_loss: if True, the loss is calculated as an average of all stream
             inferences. If False, loss is calculated as the average loss over all
@@ -179,7 +134,7 @@ def build_and_fit(
         num_parallel_calls: used in `tf.data.Dataset.map` calls.
         verbose: see `keras.Model.fit`.
         temporal_split: if True, each example is split into two at a random point during
-            training and the batch size is doubled. Furing validation/testing examples
+            training and the batch size is doubled. During validation/testing examples
             are not split, but batches are padded to create the same doubled batch size,
             albeit with only the original `batch_size` examples having non-zero
             `sample_weight`.
@@ -200,11 +155,13 @@ def build_and_fit(
 
     max_events = batch_size * events_per_example - 1  # -1 so padding makes power of 2
 
-    preprocessor, model = wrappers.per_event_model(
+    preprocessor_func, model = wrappers.per_event_model(
+        num_frames=num_frames,
         loss=loss,
         weighted_metrics=weighted_metrics,
         optimizer=optimizer,
         dropout_rate=dropout_rate,
+        normalize_heads=normalize_heads,
         use_example_loss=use_example_loss,
         max_events=max_events,
         batch_size=batch_size * 2 if temporal_split else batch_size,
@@ -213,9 +170,12 @@ def build_and_fit(
         num_classes=num_classes,
         stream_filter=stream_filter,
     )
-    preprocessor_func = _preprocessor_to_func(preprocessor)
 
-    def preprocess_dataset(dataset: tf.data.Dataset | None, dummy_temporal_split: bool):
+    def preprocess_dataset(
+        dataset: tf.data.Dataset | None,
+        num_parallel_calls: int,
+        dummy_temporal_split: bool,
+    ):
         if dataset is None:
             return None
         dataset = batching.batch_and_pad(
@@ -230,22 +190,40 @@ def build_and_fit(
         )
         return dataset
 
-    train_data = preprocess_dataset(train_data, dummy_temporal_split=False)
-    validation_data = preprocess_dataset(validation_data, dummy_temporal_split=True)
-    test_data = preprocess_dataset(test_data, dummy_temporal_split=True)
+    train_data = preprocess_dataset(
+        train_data, num_parallel_calls, dummy_temporal_split=False
+    )
+    validation_data = preprocess_dataset(
+        validation_data,
+        1 if cache_validation_data else num_parallel_calls,
+        dummy_temporal_split=True,
+    )
+    test_data = preprocess_dataset(test_data, 1, dummy_temporal_split=True)
 
     steps_per_epoch = examples_per_epoch // batch_size + int(
         bool(examples_per_epoch % batch_size)
     )
     model.summary()
-    history = model.fit(
-        train_data,
-        epochs=epochs,
-        steps_per_epoch=steps_per_epoch,
-        validation_data=validation_data,
-        callbacks=callbacks,
-        verbose=verbose,
-    )
+
+    def run(validation_data):
+        return model.fit(
+            train_data,
+            epochs=epochs,
+            steps_per_epoch=steps_per_epoch,
+            validation_data=validation_data,
+            callbacks=callbacks,
+            verbose=verbose,
+        )
+
+    if cache_validation_data and validation_data is not None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            logging.info("Caching validation data")
+            validation_data.save(tmpdir)
+            validation_data = tf.data.Dataset.load(tmpdir)
+            history = run(validation_data)
+    else:
+        history = run(validation_data)
+
     if test_data is not None:
         test_result = model.evaluate(test_data, return_dict=True)
         return model, history, test_result

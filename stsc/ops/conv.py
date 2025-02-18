@@ -230,6 +230,7 @@ def one_hot_exclusive_conv(
     successor_kernel_channel_ids: BackendTensor,
     segment_ids_out: BackendTensor,
     indices_are_sorted: bool = False,
+    normalize: bool = True,
 ) -> BackendTensor:
     """
     Args:
@@ -252,6 +253,7 @@ def one_hot_exclusive_conv(
         segment_ids_out=segment_ids_out,
         indices_are_sorted=indices_are_sorted,
         kernel_size=K,
+        normalize=normalize,
     )
     return ops.matmul(
         ops.reshape(x, (-1, K * C_in)), ops.reshape(kernel, (K * C_in, C_out))
@@ -266,6 +268,7 @@ def one_hot_exclusive_depthwise_conv(
     successor_kernel_channel_ids: BackendTensor,
     segment_ids_out: BackendTensor,
     indices_are_sorted: bool = False,
+    normalize: bool = True,
 ) -> BackendTensor:
     """
     Args:
@@ -287,6 +290,7 @@ def one_hot_exclusive_depthwise_conv(
         segment_ids_out=segment_ids_out,
         indices_are_sorted=indices_are_sorted,
         kernel_size=K,
+        normalize=normalize,
     )
     return ops.sum(x * kernel, axis=1)
 

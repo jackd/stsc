@@ -1,6 +1,6 @@
 --dataset=asl_dvs
---train_split=train[:90%]
---validation_split=train[90%:]
+--train_split=train[:80%]
+--validation_split=train[80%:]
 --test_split=
 --duration=1.1e5
 --grid_shape=240,180

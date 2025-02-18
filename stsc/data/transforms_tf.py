@@ -1,3 +1,4 @@
+import functools
 import typing as tp
 
 import numpy as np
@@ -227,12 +228,11 @@ class Pad(Transform[None]):
 class PadToSquare(Transform[None]):
     def transform_frames(self, frames: tf.Tensor, transformation) -> tf.Tensor:
         ndims = len(frames.shape)
-        shape = frames.shape[-3:-1]
-        size = max(shape)
+        size = max(frames.shape[-3:-1])
         padding = np.zeros((ndims, 2), dtype=int)
-        p = size - shape[-3]
+        p = size - frames.shape[-3]
         padding[-3] = (p // 2, p - p // 2)
-        p = size - shape[-2]
+        p = size - frames.shape[-2]
         padding[-2] = (p // 2, p - p // 2)
         return tf.pad(frames, padding)
 
@@ -245,9 +245,25 @@ class PadToSquare(Transform[None]):
         return StreamData(coords, stream.times, stream.polarity, (size,) * len(shape))
 
 
+def _get_padding(not_empty_mask: tf.Tensor) -> tp.Tuple[tf.Tensor, tf.Tensor]:
+    not_empty_mask.shape.assert_has_rank(1), not_empty_mask.shape
+    indices = tf.where(not_empty_mask)
+    pad_left = tf.reduce_min(indices)
+    pad_right = not_empty_mask.shape[0] - tf.reduce_max(indices) - 1
+    return pad_left, pad_right
+
+
 class Recenter(Transform[None]):
     def transform_frames(self, frames: tf.Tensor, transformation) -> tf.Tensor:
-        raise NotImplementedError()
+        frames.shape.assert_has_rank(4), frames.shape
+        not_empty = tf.reduce_any(frames != 0, axis=(0, -1))  # [H, W]
+        not_empty_w = tf.reduce_any(not_empty, axis=0)  # [W]
+        pad_left, pad_right = _get_padding(not_empty_w)
+        not_empty_h = tf.reduce_any(not_empty, axis=1)  # [W]
+        pad_top, pad_bottom = _get_padding(not_empty_h)
+        frames = tf.roll(frames, (pad_right - pad_left) // 2, axis=-2)
+        frames = tf.roll(frames, (pad_bottom - pad_top) // 2, axis=-3)
+        return frames
 
     def transform_stream(self, stream: StreamData, transformation) -> StreamData:
         maxes = tf.reduce_max(stream.coords, axis=-2, keepdims=True)
@@ -401,7 +417,23 @@ class RandomRotate(Transform[tf.Tensor]):
     def transform_frames(
         self, frames: tf.Tensor, transformation: tf.Tensor
     ) -> tf.Tensor:
-        raise NotImplementedError("TODO")
+        c = tf.cos(transformation)
+        s = tf.sin(transformation)
+        cx = tf.cast(frames.shape[-2], tf.float32) / 2
+        cy = tf.cast(frames.shape[-3], tf.float32) / 2
+        tx = (1 - c) * cx + s * cy
+        ty = (1 - s) * cx - c * cy
+        transform = tf.stack([c, -s, tx, s, c, ty, 0, 0], axis=0)
+        affined = tf.raw_ops.ImageProjectiveTransformV3(
+            images=frames,
+            transforms=tf.expand_dims(transform, axis=0),  # [1, 8]
+            output_shape=tf.shape(frames)[1:-1],
+            fill_value=0,
+            interpolation="NEAREST",
+            fill_mode="CONSTANT",
+        )
+        affined = tf.ensure_shape(affined, frames.shape)
+        return affined
 
     def transform_stream(
         self, stream: StreamData, transformation: tf.Tensor
@@ -435,7 +467,22 @@ class RandomZoom(Transform[tf.Tensor]):
     def transform_frames(
         self, frames: tf.Tensor, transformation: tf.Tensor
     ) -> tf.Tensor:
-        raise NotImplementedError("TODO")
+        cx = tf.cast(frames.shape[-2], tf.float32) / 2
+        cy = tf.cast(frames.shape[-3], tf.float32) / 2
+        scale = transformation
+        transform = tf.stack(
+            [scale, 0, (1 - scale) * cx, 0, scale, (1 - scale) * cy, 0, 0], axis=0
+        )
+        affined = tf.raw_ops.ImageProjectiveTransformV3(
+            images=frames,
+            transforms=tf.expand_dims(transform, axis=0),  # [1, 8]
+            output_shape=tf.shape(frames)[1:-1],
+            fill_value=0,
+            interpolation="NEAREST",
+            fill_mode="CONSTANT",
+        )
+        affined = tf.ensure_shape(affined, frames.shape)
+        return affined
 
     def transform_stream(
         self, stream: StreamData, transformation: tf.Tensor
@@ -494,13 +541,24 @@ class CentralTemporalCrop(_TemporalCrop[None]):
 
 
 class _TemporalCropV2(Transform[T]):
-    def __init__(self, rezero_times: bool = True):
+    def __init__(self, total_frac: float, rezero_times: bool = True):
+        self.total_frac = total_frac
         self.rezero_times = rezero_times
 
     def _get_temporal_limits(
         self, t_start: tf.Tensor, t_stop: tf.Tensor, transformation: T
     ) -> tp.Tuple[tf.Tensor, tf.Tensor]:
         raise NotImplementedError("Abstract method")
+
+    def _get_start_frame(self, num_frames: int, transformation: T) -> tf.Tensor | int:
+        raise NotImplementedError("Abstract method")
+
+    def transform_frames(
+        self, frames: tf.Tensor, transformation: tf.Tensor
+    ) -> tf.Tensor:
+        start_frame = self._get_start_frame(frames.shape[0], transformation)
+        num_frames_out = int(frames.shape[0] * self.total_frac)
+        return tf.slice(frames, [start_frame, 0, 0, 0], [num_frames_out, -1, -1, -1])
 
     def transform_stream(self, stream: StreamData, transformation: T) -> StreamData:
         t_start, t_stop = self._get_temporal_limits(
@@ -531,8 +589,7 @@ class RandomTemporalCropV2(_TemporalCropV2[tf.Tensor]):
                 total_frac,
             )
         self.max_initial_skip_frac = max_initial_skip_frac
-        self.total_frac = total_frac
-        super().__init__(rezero_times=rezero_times)
+        super().__init__(total_frac=total_frac, rezero_times=rezero_times)
 
     def _get_temporal_limits(
         self, t_start: tf.Tensor, t_stop: tf.Tensor, transformation: tf.Tensor
@@ -541,6 +598,14 @@ class RandomTemporalCropV2(_TemporalCropV2[tf.Tensor]):
         t_start = t_start + transformation * dt * self.max_initial_skip_frac
         t_stop = t_start + dt * self.total_frac
         return t_start, t_stop
+
+    def _get_start_frame(self, num_frames: int, transformation: tf.Tensor) -> tf.Tensor:
+        return tf.cast(
+            tf.cast(num_frames, tf.float32)
+            * transformation
+            * self.max_initial_skip_frac,
+            tf.int64,
+        )
 
     def get_transformation(
         self, frames_or_stream: tf.Tensor | StreamData, label=None, sample_weight=None
@@ -576,8 +641,7 @@ class TemporalCropV2(_TemporalCropV2[None]):
         self, initial_skip_frac: float, total_frac: float, rezero_times: bool = True
     ):
         self.initial_skip_frac = initial_skip_frac
-        self.total_frac = total_frac
-        super().__init__(rezero_times=rezero_times)
+        super().__init__(total_frac=total_frac, rezero_times=rezero_times)
 
     def _get_temporal_limits(
         self, t_start: tf.Tensor, t_stop: tf.Tensor, transformation: None
@@ -586,6 +650,9 @@ class TemporalCropV2(_TemporalCropV2[None]):
         t_start = t_start + self.initial_skip_frac * dt
         t_stop = t_start + self.total_frac * dt
         return t_start, t_stop
+
+    def _get_start_frame(self, num_frames: int, transformation: None) -> int:
+        return int(num_frames * self.initial_skip_frac)
 
 
 class FlipHorizontal(Transform):
@@ -662,7 +729,7 @@ class Transpose(Transform):
         self.label_map = label_map
 
     def transform_frames(self, frames: tf.Tensor, transformation) -> tf.Tensor:
-        return tfnp.swapaxes(frames, (-3, -2))
+        return tfnp.swapaxes(frames, -3, -2)
 
     def transform_stream(self, stream: StreamData, transformation) -> StreamData:
         coords = tf.reverse(stream.coords, axis=[1])
@@ -796,3 +863,147 @@ class FlattenLeadingDims(Transform[None]):
             polarity=tf.reshape(stream.polarity, (-1, *stream.polarity.shape[-1:])),
             grid_shape=stream.grid_shape,
         )
+
+
+def ravel_multi_index(
+    multi_index: tf.Tensor,
+    dims: tf.Tensor,
+    axis: int = 0,
+) -> tf.Tensor:
+    """
+    Convert multi-dimensional tensor indices into flat tensor indices.
+
+    Args:
+        multi_index: [N, D] (axis in (-1, 1)) or [D, N] int array indices.
+        dims: [D] shape of multi-dimensional tensor.
+        axis: axis to reduce over.
+
+    Returns:
+        [N]
+    """
+    if not isinstance(multi_index, tf.Tensor):
+        multi_index = tf.convert_to_tensor(multi_index, multi_index.dtype)
+    if not isinstance(dims, tf.Tensor):
+        dims = tf.convert_to_tensor(dims, multi_index.dtype)
+    dims.shape.assert_has_rank(1)
+    shape = [1] * len(multi_index.shape)
+    cum_dims = tfnp.flip(tfnp.cumprod(tfnp.flip(dims), axis=0))
+    cum_dims = tf.cast(cum_dims, multi_index.dtype)
+    cum_dims = tf.concat((cum_dims[1:], tf.ones((1,), dtype=cum_dims.dtype)), axis=0)
+    shape[axis] = -1
+    cum_dims = tf.reshape(cum_dims, shape)
+    return tf.reduce_sum(multi_index * cum_dims, axis=axis)
+
+
+def reduce_prod(x):
+    return functools.reduce(lambda a, b: a * b, x, 1)
+
+
+def _integrate(
+    frames: tf.Tensor,
+    coords: tf.Tensor,
+    polarity: tf.Tensor,
+    num_frames: int,
+    grid_shape: tp.Tuple[int, ...],
+):
+    """
+    Integrate events by `frame` partitions.
+
+    Args:
+        frames: [E] frame indices in [0, num_frames)
+        coords: [E, D], coords[:, i] in [0, grid_shape[i])
+        polarity: [E] bools
+        num_frames: total number of frames
+        grid_shape: total grid shape
+
+    Returns:
+        [num_frames, *grid_shape, 2] int counts of the events for the given
+            (frame, *coord, polarity).
+    """
+    frames.shape.assert_has_rank(1)
+    coords.shape.assert_is_compatible_with((None, len(grid_shape)))
+    polarity.shape.assert_has_rank(1)
+    assert frames.dtype == coords.dtype, (frames.dtype, coords.dtype)
+
+    polarity = tf.cast(polarity, coords.dtype)
+
+    stacked_coords = tf.concat(
+        [tf.expand_dims(frames, 1), coords, tf.expand_dims(polarity, 1)], axis=1
+    )
+    shape = (num_frames, *grid_shape, 2)
+    flat_coords = ravel_multi_index(stacked_coords, shape, axis=1)
+    counts = tf.math.bincount(flat_coords, minlength=reduce_prod(shape))
+    return tf.reshape(counts, shape)
+
+
+def integrate_by_time(
+    times: tf.Tensor,
+    coords: tf.Tensor,
+    polarity: tf.Tensor,
+    num_frames: int,
+    grid_shape: tp.Tuple[int, ...],
+):
+    """
+    Integrate events over uniform time windows.
+
+    Args:
+        times: [E] time indices
+        coords: [E, D], coords[:, i] in [0, grid_shape[i])
+        polarity: [E] bools
+        num_frames: total number of frames
+        grid_shape: total grid shape
+
+    Returns:
+        [num_frames, *grid_shape, 2] int counts of the events for the given
+            (frame, *coord, polarity).
+    """
+    times.shape.assert_has_rank(1)
+    times = times - times[0]
+    times = tf.cast(times, "float32")
+    dt = times[-1] / num_frames
+    frames = tf.cast(times / dt, coords.dtype)
+    frames = tf.minimum(frames, tfnp.full_like(frames, num_frames - 1))
+
+    return _integrate(frames, coords, polarity, num_frames, grid_shape)
+
+
+def integrate_by_count(
+    coords: tf.Tensor,
+    polarity: tf.Tensor,
+    num_frames: int,
+    grid_shape: tp.Tuple[int, ...],
+    # *,
+    # drop_from_end: bool = True,
+):
+    """
+    Integrate events over uniform event counts.
+
+    The last frame will include an additional `num_events % num_frames` events.
+
+    Args:
+        times: [E] time indices
+        coords: [E, D], coords[:, i] in [0, grid_shape[i])
+        polarity: [E] bools
+        num_frames: total number of frames
+        grid_shape: total grid shape
+
+    Returns:
+        [num_frames, *grid_shape, 2] int counts of the events for the given
+            (frame, *coord, polarity).
+    """
+    # trim events that don't divide evenly into frames
+    num_events = tf.shape(polarity)[0]
+    remainder = num_events % num_frames
+    # num_dropped_events = num_events % num_frames
+    # num_events = num_events - num_dropped_events
+    # start = 0 if drop_from_end else num_dropped_events
+    # coords = ops.slice(coords, (start, 0), (num_events, coords.shape[1]))
+    # polarity = ops.slice(polarity, (start,), (num_events,))
+
+    # create frames
+    events_per_frame = num_events // num_frames
+    frames = tf.repeat(tf.range(num_frames, dtype=coords.dtype), events_per_frame)
+    frames = tf.concat(
+        (frames, tf.fill((remainder,), num_frames - 1, dtype=coords.dtype))
+    )
+    return _integrate(frames, coords, polarity, num_frames, grid_shape)

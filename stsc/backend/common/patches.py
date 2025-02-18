@@ -262,6 +262,7 @@ def get_one_hot_exclusive_patches(
     segment_ids_out: BackendTensor,
     indices_are_sorted: bool,
     kernel_size: int,
+    normalize: bool = True,
 ) -> BackendTensor:
     """
     Args:
@@ -328,6 +329,12 @@ def get_one_hot_exclusive_patches(
         num_segments=E_out * kernel_size * P,
         indices_are_sorted=indices_are_sorted,
     )  # [E_out * K * P, M]
+    if normalize:
+        if is_complex:
+            raise NotImplementedError("TODO")
+        else:
+            x = ops.reshape(x, (E_out, kernel_size, P, M))
+            x = x / ops.sum(x, axis=-2, keepdims=True)
     x = ops.reshape(x, (E_out, kernel_size, P * M))  # [E_out, K, P * M]
     dt_out = ops.diff(times_out)
     dt_out = ops.reshape(dt_out, (-1, 1, 1))

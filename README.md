@@ -41,6 +41,12 @@ cd stsc
 KERAS_BACKEND=jax python scripts/train.py --flagfile=config/ncars.flags --seed=0 --interactive=True
 ```
 
+Note: some datasets (notably `asl-dvs`) are stored with very large number of files. You may need to increase the open file limit.
+
+```bash
+ulimit -n 2048
+```
+
 ## Pre-commit
 
 This package uses [pre-commit](https://pre-commit.com/) to ensure commits meet minimum criteria. To Install, use

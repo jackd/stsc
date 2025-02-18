@@ -1131,11 +1131,9 @@ class ExclusiveConv(ExclusivePatchExtractor):
 
 
 class ExclusivePooling(ExclusivePatchExtractor):
-    def __init__(
-        self, node: StreamNode, stream_out: StreamData, reduction: str, **layer_kwargs
-    ):
+    def __init__(self, node: StreamNode, stream_out: StreamData, **layer_kwargs):
         self._layer_kwargs = layer_kwargs
-        super().__init__(node, stream_out, node.num_channels, reduction=reduction)
+        super().__init__(node, stream_out, node.num_channels)
 
     def _create_layer(self) -> layers.Layer:
         return pool_layers.ExclusivePooling(self.kernel_size, **self._layer_kwargs)

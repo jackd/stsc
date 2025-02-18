@@ -1,6 +1,6 @@
 --dataset=ncaltech101
---train_split=train[:90%]
---validation_split=train[90%:]
+--train_split=train[:80%]
+--validation_split=train[80%:]
 --test_split=
 --duration=3e5
 --transpose=True

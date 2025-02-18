@@ -191,9 +191,16 @@ def get_exclusive_patches(
 
 
 class GetOneHotExclusivePatches(Operation):
-    def __init__(self, kernel_size: int, indices_are_sorted: int, name=None):
+    def __init__(
+        self,
+        kernel_size: int,
+        indices_are_sorted: int,
+        normalize: bool = True,
+        name=None,
+    ):
         self.kernel_size = kernel_size
         self.indices_are_sorted = indices_are_sorted
+        self.normalize = normalize
         super().__init__(name=name)
 
     def compute_output_spec(
@@ -230,6 +237,7 @@ class GetOneHotExclusivePatches(Operation):
             successor_kernel_channel_ids=successor_kernel_channel_ids,
             indices_are_sorted=self.indices_are_sorted,
             kernel_size=self.kernel_size,
+            normalize=self.normalize,
         )
 
 
@@ -241,9 +249,12 @@ def get_one_hot_exclusive_patches(
     segment_ids_out: Tensor,
     kernel_size: int,
     indices_are_sorted: bool = False,
+    normalize: bool = True,
 ) -> Tensor:
     return GetOneHotExclusivePatches(
-        kernel_size=kernel_size, indices_are_sorted=indices_are_sorted
+        kernel_size=kernel_size,
+        indices_are_sorted=indices_are_sorted,
+        normalize=normalize,
     )(
         dt=dt,
         times_out=times_out,

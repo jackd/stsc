@@ -517,12 +517,14 @@ class OneHotExclusiveConv(_ConvBase):
         filters_out: int,
         kernel_size: int,
         channel_multiplier: int = 1,
+        normalize: bool = True,
         **kwargs,
     ):
         self.filters_in = filters_in
         self.filters_out = filters_out
         self.kernel_size = kernel_size
         self.channel_multiplier = channel_multiplier
+        self.normalize = normalize
         super().__init__(**kwargs)
 
     def get_config(self):
@@ -532,6 +534,7 @@ class OneHotExclusiveConv(_ConvBase):
             filters_out=self.filters_out,
             kernel_size=self.kernel_size,
             channel_multiplier=self.channel_multiplier,
+            normalize=self.normalize,
         )
         return config
 
@@ -572,6 +575,7 @@ class OneHotExclusiveConv(_ConvBase):
             successor_kernel_channel_ids=successor_kernel_channel_ids,
             segment_ids_out=segment_ids_out,
             indices_are_sorted=indices_are_sorted,
+            normalize=self.normalize,
         )
 
     def call(
@@ -601,10 +605,12 @@ class OneHotExclusiveDepthwiseConv(_ConvBase):
         self,
         filters: int,
         kernel_size: int,
+        normalize: bool = True,
         **kwargs,
     ):
         self.filters = filters
         self.kernel_size = kernel_size
+        self.normalize = normalize
         super().__init__(**kwargs)
 
     def get_config(self):
@@ -612,6 +618,7 @@ class OneHotExclusiveDepthwiseConv(_ConvBase):
         config.update(
             filters=self.filters,
             kernel_size=self.kernel_size,
+            normalize=self.normalize,
         )
         return config
 
@@ -648,6 +655,7 @@ class OneHotExclusiveDepthwiseConv(_ConvBase):
             segment_ids_out=segment_ids_out,
             successor_kernel_channel_ids=successor_kernel_channel_ids,
             indices_are_sorted=indices_are_sorted,
+            normalize=self.normalize,
         )
 
     def call(

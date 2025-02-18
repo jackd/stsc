@@ -11,6 +11,4 @@
 --flip_temporal_label_map=0,1,2,4,3,6,5,7,8,9,10
 --flip_horizontal=True
 --flip_horizontal_label_map=0,2,1,6,5,4,3,7,8,9,10
-# --initial_sample_rate=8
-# --batch_size=16
 --initial_sample_rate=16

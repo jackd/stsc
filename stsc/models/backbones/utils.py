@@ -18,3 +18,18 @@ def complex_decay_rate_activation(x):
 
 def get_decay_rate_activation(complex_conv: bool) -> tp.Callable:
     return complex_decay_rate_activation if complex_conv else keras.ops.softplus
+
+
+def get_bias_initializer(
+    activation: str | tp.Callable,
+) -> keras.initializers.Initializer:
+    activation_name = (
+        "None"
+        if activation is None
+        else activation.__name__
+        if callable(activation)
+        else activation
+    )
+    return (
+        keras.initializers.Constant(-1.0) if "heaviside" in activation_name else "zeros"
+    )
